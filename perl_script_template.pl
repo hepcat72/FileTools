@@ -9,7 +9,7 @@
 #Copyright 2007
 
 #These variables (in main) are used by printVersion()
-my $template_version_number = '1.31';
+my $template_version_number = '1.32';
 my $software_version_number = '1.0';
 
 ##
@@ -790,7 +790,14 @@ sub getLine
 	      split(/(?<=\n)/,$line);
 	  }
 	else
-	  {@{$main::infile_line_buffer->{$file_handle}->{FILE}} = ($line)}
+	  {
+	    #Do the \r substitution for the last line of files that have the
+	    #eof character at the end of the last line instead of on a line by
+	    #itself.  I tested this on a file that was causing errors for the
+	    #last line and it works.
+	    $line =~ s/\r/\n/g if(defined($line));
+	    @{$main::infile_line_buffer->{$file_handle}->{FILE}} = ($line);
+	  }
       }
 
     #Shift off and return the first thing in the buffer for this file handle

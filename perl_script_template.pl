@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 
 #SCRIPT NAME HERE
-#Generated using perl_script_template.pl 1.31
+#Generated using perl_script_template.pl 1.33
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Created on DATE HERE
@@ -9,7 +9,7 @@
 #Copyright 2007
 
 #These variables (in main) are used by printVersion()
-my $template_version_number = '1.32';
+my $template_version_number = '1.33';
 my $software_version_number = '1.0';
 
 ##
@@ -135,7 +135,7 @@ use strict;
 use Getopt::Long;
 
 #Declare & initialize variables.  Provide default values here.
-my($outfile_suffix); #Not defined on purpose so a user can overwrite the input file
+my($outfile_suffix); #Not defined so a user can overwrite the input file
 my @input_files         = ();
 my $current_output_file = '';
 my $help                = 0;
@@ -307,11 +307,13 @@ foreach my $input_file (@input_files)
 		     "] Opened input file.")}
 
     #Keep track of input file's line number
-    my $line_num = 1;
+    my $line_num = 0;
 
     #For each line in the current input file
     while(getLine(*INPUT))
       {
+	$lin_num++;
+
 	verboseOverMe("[",
 		      ($input_file eq '-' ? 'STDIN' : $input_file),
 		      "] Reading line $line_num.");
@@ -332,7 +334,6 @@ foreach my $input_file (@input_files)
 
 
 
-	$line_num++;
       }
 
     close(INPUT);

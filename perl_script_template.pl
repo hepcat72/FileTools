@@ -306,17 +306,12 @@ foreach my $input_file (@input_files)
 		     ($input_file eq '-' ? 'STDIN' : $input_file),
 		     "] Opened input file.")}
 
-    #Keep track of input file's line number
-    my $line_num = 0;
-
     #For each line in the current input file
     while(getLine(*INPUT))
       {
-	$lin_num++;
-
 	verboseOverMe("[",
 		      ($input_file eq '-' ? 'STDIN' : $input_file),
-		      "] Reading line $line_num.");
+		      '] Reading line: [',$.,'].');
 
 
 
@@ -471,8 +466,21 @@ sub usage
     my $script = $0;
     $script =~ s/^.*\/([^\/]+)$/$1/;
 
+    #Grab the first version of each option from the global GetOptHash
+    my $options = '[' .
+      join('] [',
+	   grep {$_ ne '-i'}        #Remove REQUIRED params
+	   map {my $key=$_;         #Save the key
+		$key=~s/\|.*//;     #Remove other versions
+		$key=~s/(\!|=.)$//; #Remove trailing getopt stuff
+		$key = (length($key) > 1 ? '--' : '-') . $key;} #Add dashes
+	   grep {$_ ne '<>'}        #Remove the no-flag parameters
+	   keys(%$GetOptHash)) .
+	     ']';
+
     print << "end_print";
-USAGE: $script -i "input file(s)" [-o .ext] [-f] [-v] [-q] [-h] [--version] [--debug] < another_input_file
+USAGE: $script -i "input file(s)" $options
+       $script $options < input_file
 end_print
 
     if($no_descriptions)

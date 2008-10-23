@@ -7,7 +7,7 @@
 #Copyright 2004
 
 markTime();
-my $software_version_number = '1.6';
+my $software_version_number = '1.7';
 
 ##
 ## Start Main
@@ -230,7 +230,7 @@ USAGE: $0 -r|--replace replace_string -w|--with with_string input_files [-p] [-f
                                    the with string is substituted into its
                                    place.  If -r is not supplied, the file name
                                    is appended with the with string.
-     -p|pattern-mode      OPTIONAL [Off] Treat the -r string as a perl regular
+     -p|--pattern-mode    OPTIONAL [Off] Treat the -r string as a perl regular
                                    expression.
      -f|--force           OPTIONAL [Off] Force file rename.  Use this if you
                                    want the rename operation to overwrite

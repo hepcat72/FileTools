@@ -7,7 +7,7 @@
 #Copyright 2004
 
 markTime();
-my $software_version_number = '1.7';
+my $software_version_number = '1.8';
 
 ##
 ## Start Main
@@ -27,6 +27,8 @@ my $append_flag  = 0;
 my $replace      = 'rename_placeholder';
 my $with         = 'rename_placeholder';
 my $pattern_mode = 0;
+my $number_mode  = 0;
+my $increment    = 0;
 
 #If there are no arguments and no files directed in
 if(scalar(@ARGV) == 0)
@@ -36,14 +38,16 @@ if(scalar(@ARGV) == 0)
   }
 
 #Get the input options
-GetOptions('r|replace=s'        => \$replace,  #REQUIRED if -w not supplied
-           'w|with=s'           => \$with,     #REQUIRED if -r not supplied
+GetOptions('r|replace=s'        => \$replace,      #REQUIRED if -w not supplied
+           'w|with=s'           => \$with,         #REQUIRED if -r not supplied
 	   'p|pattern-mode!'    => \$pattern_mode, #OPTIONAL [Off]
-	   'f|force!'           => \$force,    #OPTIONAL [Off]
-	   'version!'           => \$version,  #OPTIONAL [Off]
-	   'q|quiet!'           => \$quiet,    #OPTIONAL [Off]
-	   'v|verbose!'         => \$verbose,  #OPTIONAL [Off]
-	   'h|help!'            => \$help,     #OPTIONAL [Off]
+	   'n|number-mode!'     => \$number_mode,  #OPTIONAL [Off]
+           'skip-existing-nums!'=> \$increment,    #OPTIONAL [Off]
+	   'f|force!'           => \$force,        #OPTIONAL [Off]
+	   'version!'           => \$version,      #OPTIONAL [Off]
+	   'q|quiet!'           => \$quiet,        #OPTIONAL [Off]
+	   'v|verbose!'         => \$verbose,      #OPTIONAL [Off]
+	   'h|help!'            => \$help,         #OPTIONAL [Off]
 	   '<>'                 => sub {push(@input_files,$_[0])}
                                                       #OPTIONAL [All files]
           );
@@ -74,19 +78,27 @@ if(scalar(@not_files) && $replace eq 'rename_placeholder')
 	       "flag.")}
     $force = 0;
   }
-if(scalar(@not_files) && $with eq 'rename_placeholder')
+if(scalar(@not_files) && $with eq 'rename_placeholder' && !$number_mode)
   {
     $with = shift(@not_files);
     @input_files = grep {$_ ne $with} @input_files;
     if($force)
-      {warning("The force flag will not work without an explicit 'with' ",
-	       "flag.")}
+      {warning("The force flag will not work without either an explicit ",
+	       "-w(--with) flag or -n(--number-mode) flag.")}
     $force = 0;
   }
 
-if($replace eq 'rename_placeholder' && $with eq 'rename_placeholder')
+if($with ne 'rename_placeholder' && $number_mode)
   {
-    error("You must supply either the -r or -w parameters with values.")
+    error("You cannot supply -w and -n together.");
+    usage() unless($quiet);
+    exit(1);
+  }
+
+if($replace eq 'rename_placeholder' && $with eq 'rename_placeholder' &&
+   !$number_mode)
+  {
+    error("You must supply either the -r, -w, or -n parameter.")
       unless($quiet);
     usage() unless($quiet);
     exit(2);
@@ -97,39 +109,58 @@ if($replace eq 'rename_placeholder')
     $replace = '';
     $append_flag = 1;
   }
-$with    = '' if($with    eq 'rename_placeholder');
+$with = '' if($with eq 'rename_placeholder');
 
 if(scalar(@input_files) == 0)
   {
     my $globstring = $replace;
     $globstring =~ s/(.*)(\/|\A)/$1$2*/;
-    if(defined($replace))
+    if(defined($replace) && !$pattern_mode)
       {@input_files = grep {-e $_} glob("$globstring*")}
     else
       {@input_files = glob('*')}
   }
 
+#If they specified a file path in the pattern, remove it
 $replace =~ s/.*\///;
 $replace = quotemeta($replace) if(defined($replace) && !$pattern_mode);
 
 my $renamed = 0;
+my $number  = 1;
 
 #For each input file of the same type
 foreach my $input_file (@input_files)
   {
     next unless(-e $input_file);
 
-    my $newname = $input_file;
+    my($newname);
 
-    if($append_flag)
-      {$newname .= $with}
-    else
-      {$newname =~ s/(?=[^\/]+\Z)$replace/$with/}
+    do
+      {
+	$newname = $input_file;
+	$with    = $number if($number_mode);
+
+	if($append_flag)
+	  {$newname .= $with}
+	else
+	  {$newname =~ s/(?=[^\/]*\Z)$replace/$with/}
+
+	#If we're in "skip existing nums" mode and the file exists, increment
+	if($input_file ne $newname && $number_mode && $increment &&
+	   -e $newname)
+	  {$number++}
+      }
+	#If we're in "skip existing nums" mode and the file exists, loop
+	while($input_file ne $newname && $number_mode && $increment &&
+	      -e $newname);
 
     if($input_file eq $newname)
       {next}
     elsif(!$force && -e $newname)
-      {error("$newname already exists.  Use -f to override.") if(!$quiet)}
+      {
+	$number++;
+	error("$newname already exists.  Use -f to override.") if(!$quiet);
+      }
     else
       {
 	warning("Replacing $newname") if(!$quiet && -e $newname);
@@ -138,6 +169,7 @@ foreach my $input_file (@input_files)
 	rename($input_file,$newname);
 	$renamed++ unless($?);
 	error("Unable to rename [$input_file].  $!\n") if($?);
+	$number++;
       }
   }
 
@@ -232,6 +264,17 @@ USAGE: $0 -r|--replace replace_string -w|--with with_string input_files [-p] [-f
                                    is appended with the with string.
      -p|--pattern-mode    OPTIONAL [Off] Treat the -r string as a perl regular
                                    expression.
+     -n|--number-mode     OPTIONAL [Off] Supplying this flag indicates that the
+                                   replace string is to be replaced by an
+                                   incrementing number (starting from 1).  The
+                                   number is incremented for each file name
+                                   successfully changed.  If -r is not
+                                   supplied, the number is appended to the file
+                                   name.  Cannot use with -w (--with).
+     --skip-existing-nums OPTIONAL [Off] Increment the number (see -n) until
+                                   the new file name is unique (i.e. avoids
+                                   overwriting existing files).  Only used if
+                                   -n is supplied.
      -f|--force           OPTIONAL [Off] Force file rename.  Use this if you
                                    want the rename operation to overwrite
                                    possible files that have the same name as

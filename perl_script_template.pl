@@ -1,12 +1,12 @@
 #!/usr/bin/perl -w
 
-#Generated using perl_script_template.pl 1.35
+#Generated using perl_script_template.pl 1.37
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
 #Copyright 2008
 
-#These variables (in main) are used by printVersion() and usage()
+#These variables (in main) are used by getVersion() and usage()
 my $software_version_number = '1.0';
 my $created_on_date         = 'DATE HERE';
 
@@ -113,9 +113,9 @@ my $created_on_date         = 'DATE HERE';
 ##     '*' like the command line does).  If multiple space delimited files are
 ##     supplied, it is the user's responsibility to escape the space
 ##     characters.
-##   printVersion subroutine
-##     Prints the software_version_number (and the template_version_number and
-##     information if the verbose flag is supplied).
+##   getVersion subroutine
+##     Returns the software_version_number (and the template_version_number and
+##     information if the full version flag is supplied).
 ##   isStandardInputFromTerminal subroutine
 ##     Returns true if *no* input has been redirected into this script, false
 ##     if there is input on STDIN.
@@ -123,6 +123,9 @@ my $created_on_date         = 'DATE HERE';
 ##     Returns true if output is going to a TTY (i.e. output has *not* been
 ##     redirected on the command line) AND if STDOUT is selected, false if
 ##     STDOUT is not selected or output is not going to a TTY.
+##   quit subroutine
+##     Makes a call to exit to stop the script unless the --ignore-errors flag
+##     was provided on the command line.
 ##
 
 ##
@@ -139,13 +142,15 @@ my $current_output_file = '';
 my $help                = 0;
 my $version             = 0;
 my $overwrite           = 0;
+my $noheader            = 0;
 
 #These variables (in main) are used by the following subroutines:
-#verbose, error, warning, debug, printVersion, getCommand and usage
+#verbose, error, warning, debug, getCommand, quit, and usage
 my $preserve_args = [@ARGV];  #Preserve the agruments for getCommand
 my $verbose       = 0;
 my $quiet         = 0;
 my $DEBUG         = 0;
+my $ignore_errors = 0;
 
 my $GetOptHash =
   {# ENTER YOUR COMMAND LINE PARAMETERS HERE AS BELOW
@@ -155,48 +160,60 @@ my $GetOptHash =
    '<>'                 => sub {push(@input_files,   #REQUIRED unless -i is
 				     sglob($_[0]))}, #         supplied
    'o|outfile-suffix=s' => \$outfile_suffix,         #OPTIONAL [undef]
-   'overwrite!'         => \$overwrite,              #OPTIONAL [Off]
-   'verbose!'           => \$verbose,                #OPTIONAL [Off]
-   'quiet!'             => \$quiet,                  #OPTIONAL [Off]
-   'help!'              => \$help,                   #OPTIONAL [Off]
-   'debug!'             => \$DEBUG,                  #OPTIONAL [Off]
-   'version!'           => \$version,                #OPTIONAL [Off]
+   'force|overwrite'    => \$overwrite,              #OPTIONAL [Off]
+   'ignore'             => \$ignore_errors,          #OPTIONAL [Off]
+   'verbose:+'          => \$verbose,                #OPTIONAL [Off]
+   'quiet'              => \$quiet,                  #OPTIONAL [Off]
+   'debug:+'            => \$DEBUG,                  #OPTIONAL [Off]
+   'help|?'             => \$help,                   #OPTIONAL [Off]
+   'version'            => \$version,                #OPTIONAL [Off]
+   'noheader'           => \$noheader,               #OPTIONAL [Off]
   };
 
 #If there are no arguments and no files directed or piped in
 if(scalar(@ARGV) == 0 && isStandardInputFromTerminal())
   {
     usage();
-    exit(0);
+    quit(0);
   }
 
-#Get the input options
-GetOptions(%$GetOptHash);
+#Get the input options & catch any errors in option parsing
+unless(GetOptions(%$GetOptHash))
+  {
+    #Try to guess which arguments GetOptions is complaining about
+    my @possibly_bad = grep {!(-e $_)} @input_files;
+
+    error('Getopt::Long::GetOptions reported an error while parsing the ',
+	  'command line arguments.  The error should be above.  Please ',
+	  'correct the offending argument(s) and try again.');
+    usage(1);
+    quit(1);
+  }
 
 #Print the debug mode (it checks the value of the DEBUG global variable)
-debug('Debug mode on.');
+debug('Debug mode on.') if($DEBUG > 1);
 
 #If the user has asked for help, call the help subroutine
 if($help)
   {
     help();
-    exit(0);
+    quit(0);
   }
 
 #If the user has asked for the software version, print it
 if($version)
   {
-    printVersion();
-    exit(0);
+    print(getVersion($verbose),"\n");
+    quit(0);
   }
 
 #Check validity of verbosity options
-if($verbose && ($quiet || $DEBUG))
+if($quiet && ($verbose || $DEBUG))
   {
     $quiet = 0;
-    error('You cannot supply verbose and quiet flags or verbose abd debug ',
-	  'flags at the same time.');
-    exit(1);
+    error('You cannot supply the quiet and (verbose or debug) flags ',
+	  'together.');
+    quit(2);
   }
 
 #Put standard input into the input_files array if standard input has been redirected in
@@ -208,6 +225,15 @@ if(!isStandardInputFromTerminal())
     if(defined($outfile_suffix))
       {warning('Input on STDIN detected along with an outfile suffix.  Your ',
 	       'output file will be named STDIN',$outfile_suffix)}
+    #Warn users when they turn on verbose and output is to the terminal
+    #(implied by no outfile suffix checked above) that verbose messages may be
+    #uncleanly overwritten
+    elsif($verbose && isStandardOutputToTerminal())
+      {warning('You have enabled --verbose, but appear to possibly be ',
+	       'outputting to the terminal.  Note that verbose messages can ',
+	       'interfere with formatting of terminal output making it ',
+	       'difficult to read.  You may want to either turn verbose off, ',
+	       'redirect output to a file, or supply an outfile suffix (-o).')}
   }
 
 #Make sure there is input
@@ -215,7 +241,7 @@ if(scalar(@input_files) == 0)
   {
     error('No input files detected.');
     usage(1);
-    exit(2);
+    quit(3);
   }
 
 #Check to make sure previously generated output files won't be over-written
@@ -231,8 +257,8 @@ if(!$overwrite && defined($outfile_suffix))
       {
 	error("The output files: [@$existing_outfiles] already exist.  ",
 	      'Use --overwrite to force an overwrite of existing files.  ',
-	      "E.g.\n\t",getCommand(1),' --overwrite');
-	exit(3);
+	      "E.g.:\n",getCommand(1),' --overwrite');
+	exit(4);
       }
   }
 
@@ -259,8 +285,15 @@ verbose('Run conditions: ',getCommand(1));
 
 
 #If output is going to STDOUT instead of output files with different extensions
-if(!defined($outfile_suffix))
-  {verbose('[STDOUT] Opened for all output.')}
+#or if STDOUT was redirected, output run info once
+verbose('[STDOUT] Opened for all output.') if(!defined($outfile_suffix));
+
+#Store info. about the run as a comment at the top of the output file if
+#STDOUT has been redirected to a file
+if(!isStandardOutputToTerminal() && !$noheader)
+  {print('#',getVersion(),"\n",
+	 '#',scalar(localtime($^T)),"\n",
+	 '#',getCommand(1),"\n");}
 
 #For each input file
 foreach my $input_file (@input_files)
@@ -284,10 +317,15 @@ foreach my $input_file (@input_files)
 	    next;
 	  }
 	else
-	  {verboseOverMe("[$current_output_file] Opened output file.")}
+	  {verbose("[$current_output_file] Opened output file.")}
 
 	#Select the output file handle
 	select(OUTPUT);
+
+	#Store info. about the run as a comment at the top of the output file
+	print('#',getVersion(),"\n",
+	      '#',scalar(localtime($^T)),"\n",
+	      '#',getCommand(1),"\n") unless($noheader);
       }
 
     #Open the input file
@@ -298,11 +336,11 @@ foreach my $input_file (@input_files)
 	next;
       }
     else
-      {verboseOverMe('[',($input_file eq '-' ? 'STDIN' : $input_file),'] ',
-		     'Opened input file.')}
+      {verbose('[',($input_file eq '-' ? 'STDIN' : $input_file),'] ',
+	       'Opened input file.')}
 
     my $line_num     = 0;
-    my $verbose_freq = 1000;
+    my $verbose_freq = 100;
 
     #For each line in the current input file
     while(getLine(*INPUT))
@@ -367,6 +405,8 @@ foreach my $input_file (@input_files)
 
 
 
+
+verbose("[STDOUT] Output done.") if(!defined($outfile_suffix));
 
 #Report the number of errors, warnings, and debugs on STDERR
 if(!$quiet && ($verbose                     ||
@@ -435,14 +475,18 @@ sub help
     my $lmd = localtime((stat($script))[9]);
     $script =~ s/^.*\/([^\/]+)$/$1/;
 
+    #$software_version_number  - global
+    #$created_on_date          - global
+    $created_on_date = 'UNKNOWN' if($created_on_date eq 'DATE HERE');
+
     #Print a description of this program
     print << "end_print";
 
-$script version $main::software_version_number
+$script version $software_version_number
 Copyright 2008
 Robert W. Leach
-Created on $main::created_on_date
-Last Modified on $lmd
+Created: $created_on_date
+Last Modified: $lmd
 Center for Computational Research
 701 Ellicott Street
 Buffalo, NY 14203
@@ -473,12 +517,12 @@ sub usage
     #Grab the first version of each option from the global GetOptHash
     my $options = '[' .
       join('] [',
-	   grep {$_ ne '-i'}        #Remove REQUIRED params
-	   map {my $key=$_;         #Save the key
-		$key=~s/\|.*//;     #Remove other versions
-		$key=~s/(\!|=.)$//; #Remove trailing getopt stuff
+	   grep {$_ ne '-i'}           #Remove REQUIRED params
+	   map {my $key=$_;            #Save the key
+		$key=~s/\|.*//;        #Remove other versions
+		$key=~s/(\!|=.|:.)$//; #Remove trailing getopt stuff
 		$key = (length($key) > 1 ? '--' : '-') . $key;} #Add dashes
-	   grep {$_ ne '<>'}        #Remove the no-flag parameters
+	   grep {$_ ne '<>'}           #Remove the no-flag parameters
 	   keys(%$GetOptHash)) .
 	     ']';
 
@@ -488,41 +532,53 @@ USAGE: $script -i "input file(s)" $options
 end_print
 
     if($no_descriptions)
-      {print('Execute $script with no options to see a description of the ',
-             'available parameters or with the --help flag to see a ',
-	     "description of what this script does.\n")}
+      {print("`$script` for expanded usage.\n")}
     else
       {
         print << 'end_print';
 
      -i|--input-file*     REQUIRED Space-separated input file(s inside quotes).
-                                   *No flag required.  Standard input via
-                                   redirection is acceptable.  Perl glob
-                                   characters (e.g. '*') are acceptable inside
-                                   quotes.  See --help for a description of the
-                                   input file format.
+                                   Standard input via redirection is
+                                   acceptable.  Perl glob characters (e.g. '*')
+                                   are acceptable inside quotes (e.g.
+                                   -i "*.txt *.text").  See --help for a
+                                   description of the input file format.
+                                   *No flag required.
      -o|--outfile-suffix  OPTIONAL [nothing] This suffix is added to the input
                                    file names to use as output files.
                                    Redirecting a file into this script will
                                    result in the output file name to be "STDIN"
                                    with your suffix appended.  See --help for a
                                    description of the output file format.
-     --overwrite          OPTIONAL [Off] Force overwrite of existing output
-                                   files (generated from previous runs of this
-                                   script).  Only used when the -o option is
-                                   supplied.
-     --verbose            OPTIONAL [Off] Verbose mode.  Cannot be used with the
-                                   quiet flag.
-     --quiet              OPTIONAL [Off] Quiet mode.  Turns off warnings and
-                                   errors.  Cannot be used with the verbose
-                                   flag.
-     --help               OPTIONAL [Off] Help.  Use this option to see an
-                                   explanation of the script and its input and
-                                   output files.
-     --version            OPTIONAL [Off] Print software version number.  If
-                                   verbose mode is on, it also prints the
-                                   template version used to standard error.
-     --debug              OPTIONAL [Off] Debug mode.
+     --force|--overwrite  OPTIONAL Force overwrite of existing output files.
+                                   Only used when the -o option is supplied.
+     --ignore             OPTIONAL Ignore critical errors & continue
+                                   processing.  (Errors will still be
+                                   reported.)  See --force to not exit when
+                                   existing output files are found.
+     --verbose            OPTIONAL Verbose mode.  Cannot be used with the quiet
+                                   flag.  Verbosity level can be increased by
+                                   supplying a number (e.g. --verbose 2) or by
+                                   supplying the --verbose flag multiple times.
+     --quiet              OPTIONAL Quiet mode.  Suppresses warnings and errors.
+                                   Cannot be used with the verbose or debug
+                                   flags.
+     --help|-?            OPTIONAL Help.  Print an explanation of the script
+                                   and its input/output files.
+     --version            OPTIONAL Print software version number.  If verbose
+                                   mode is on, it also prints the template
+                                   version used to standard error.
+     --debug              OPTIONAL Debug mode.  Adds debug output to STDERR and
+                                   prepends trace information to warning and
+                                   error messages.  Cannot be used with the
+                                   --quiet flag.  Debug level can be increased
+                                   by supplying a number (e.g. --debug 2) or by
+                                   supplying the --debug flag multiple times.
+     --noheader           OPTIONAL Suppress commented header output.  Without
+                                   this option, the script version, date/time,
+                                   and command-line information will be printed
+                                   at the top of all output files commented
+                                   with '#' characters.
 
 end_print
       }
@@ -583,12 +639,45 @@ sub verbose
     else
       {chomp($verbose_message)}
 
+    #If this message is not going to be over-written (i.e. we will be printing
+    #a \n after this verbose message), we can reset verbose_length to 0 which
+    #will cause $main::last_verbose_size to be 0 the next time this is called
     if(!$overwrite_flag)
       {$verbose_length = 0}
-    elsif($verbose_message =~ /\n([^\n]*)$/)
+    #If there were \r's in the verbose message submitted (after the last \n)
+    #Calculate the verbose length as the largest \r-split string
+    elsif($verbose_message =~ /\r[^\n]*$/)
+      {
+	my $tmp_message = $verbose_message;
+	$tmp_message =~ s/.*\n//;
+	($verbose_length) = sort {length($b) <=> length($a)}
+	  split(/\r/,$tmp_message);
+      }
+    #Otherwise, the verbose_length is the size of the string after the last \n
+    elsif($verbose_message =~ /([^\n]*)$/)
       {$verbose_length = length($1)}
-    else
-      {$verbose_length = length($verbose_message)}
+
+    #If the buffer is not being flushed, the verbose output doesn't start with
+    #a \n, and output is to the terminal, make sure we don't over-write any
+    #STDOUT output
+    #NOTE: This will not clean up verbose output over which STDOUT was written.
+    #It will only ensure verbose output does not over-write STDOUT output
+    #NOTE: This will also break up STDOUT output that would otherwise be on one
+    #line, but it's better than over-writing STDOUT output.  If STDOUT is going
+    #to the terminal, it's best to turn verbose off.
+    if(!$| && $verbose_message !~ /^\n/ && isStandardOutputToTerminal())
+      {
+	#The number of characters since the last flush (i.e. since the last \n)
+	#is the current cursor position minus the cursor position after the
+	#last flush (thwarted if user prints \r's in STDOUT)
+	my $num_chars = tell(STDOUT) - sysseek(STDOUT,0,1);
+
+	#If there have been characters printed since the last \n, prepend a \n
+	#to the verbose message so that we do not over-write the user's STDOUT
+	#output
+	if($num_chars > 0)
+	  {$verbose_message = "\n$verbose_message"}
+      }
 
     #Overwrite the previous verbose message by appending spaces just before the
     #first hard return in the verbose message IF THE VERBOSE MESSAGE DOESN'T
@@ -634,14 +723,16 @@ sub error
 
     #Gather and concatenate the error message and split on hard returns
     my @error_message = split(/\n/,join('',grep {defined($_)} @_));
-    pop(@error_message) if($error_message[-1] !~ /\S/);
+    push(@error_message,'') unless(scalar(@error_message));
+    pop(@error_message) if(scalar(@error_message) > 1 &&
+			   $error_message[-1] !~ /\S/);
 
     $main::error_number++;
     my $leader_string = "ERROR$main::error_number:";
 
     #Assign the values from the calling subroutines/main
     my(@caller_info,$line_num,$caller_string,$stack_level,$script);
-    if($main::DEBUG)
+    if($DEBUG)
       {
 	$script = $0;
 	$script =~ s/^.*\/([^\/]+)$/$1/;
@@ -660,8 +751,10 @@ sub error
 	    $stack_level++;
 	  }
 	$caller_string .= "MAIN(LINE$line_num):";
-	$leader_string .= "$script:$caller_string " if($main::DEBUG);
+	$leader_string .= "$script:$caller_string";
       }
+
+    $leader_string .= ' ';
 
     #Figure out the length of the first line of the error
     my $error_length = length(($error_message[0] =~ /\S/ ?
@@ -670,15 +763,17 @@ sub error
 
     #Put location information at the beginning of the first line of the message
     #and indent each subsequent line by the length of the leader string
-    print STDERR $leader_string;
+    print STDERR ($leader_string,
+		  shift(@error_message),
+		  ($verbose &&
+		   defined($main::last_verbose_state) &&
+		   $main::last_verbose_state ?
+		   ' ' x ($main::last_verbose_size - $error_length) : ''),
+		  "\n");
     my $leader_length = length($leader_string);
     foreach my $line (@error_message)
       {print STDERR (' ' x $leader_length,
 		     $line,
-		     ($verbose &&
-		      defined($main::last_verbose_state) &&
-		      $main::last_verbose_state ?
-		      ' ' x ($main::last_verbose_size - $error_length) : ''),
 		     "\n")}
 
     #Reset the verbose states if verbose is true
@@ -705,13 +800,15 @@ sub warning
 
     #Gather and concatenate the warning message and split on hard returns
     my @warning_message = split(/\n/,join('',grep {defined($_)} @_));
-    pop(@warning_message) if($warning_message[-1] !~ /\S/);
+    push(@warning_message,'') unless(scalar(@warning_message));
+    pop(@warning_message) if(scalar(@warning_message) > 1 &&
+			     $warning_message[-1] !~ /\S/);
 
-    my $leader_string = "WARNING$main::warning_number: ";
+    my $leader_string = "WARNING$main::warning_number:";
 
     #Assign the values from the calling subroutines/main
     my(@caller_info,$line_num,$caller_string,$stack_level,$script);
-    if($main::DEBUG)
+    if($DEBUG)
       {
 	$script = $0;
 	$script =~ s/^.*\/([^\/]+)$/$1/;
@@ -730,8 +827,10 @@ sub warning
 	    $stack_level++;
 	  }
 	$caller_string .= "MAIN(LINE$line_num):";
-	$leader_string .= "$script:$caller_string " if($main::DEBUG);
+	$leader_string .= "$script:$caller_string";
       }
+
+    $leader_string .= ' ';
 
     #Figure out the length of the first line of the error
     my $warning_length = length(($warning_message[0] =~ /\S/ ?
@@ -740,15 +839,17 @@ sub warning
 
     #Put leader string at the beginning of each line of the message
     #and indent each subsequent line by the length of the leader string
-    print STDERR $leader_string;
+    print STDERR ($leader_string,
+		  shift(@warning_message),
+		  ($verbose &&
+		   defined($main::last_verbose_state) &&
+		   $main::last_verbose_state ?
+		   ' ' x ($main::last_verbose_size - $warning_length) : ''),
+		  "\n");
     my $leader_length = length($leader_string);
     foreach my $line (@warning_message)
       {print STDERR (' ' x $leader_length,
 		     $line,
-		     ($verbose &&
-		      defined($main::last_verbose_state) &&
-		      $main::last_verbose_state ?
-		      ' ' x ($main::last_verbose_size - $warning_length) : ''),
 		     "\n")}
 
     #Reset the verbose states if verbose is true
@@ -867,7 +968,9 @@ sub debug
 
     #Gather and concatenate the error message and split on hard returns
     my @debug_message = split(/\n/,join('',grep {defined($_)} @_));
-    pop(@debug_message) if($debug_message[-1] !~ /\S/);
+    push(@debug_message,'') unless(scalar(@debug_message));
+    pop(@debug_message) if(scalar(@debug_message) > 1 &&
+			   $debug_message[-1] !~ /\S/);
 
     #Assign the values from the calling subroutine
     #but if called from main, assign the values from main
@@ -888,15 +991,17 @@ sub debug
 			      $debug_message[0]);
 
     #Put location information at the beginning of each line of the message
-    print STDERR $leader_string;
+    print STDERR ($leader_string,
+		  shift(@debug_message),
+		  ($verbose &&
+		   defined($main::last_verbose_state) &&
+		   $main::last_verbose_state ?
+		   ' ' x ($main::last_verbose_size - $debug_length) : ''),
+		  "\n");
     my $leader_length = length($leader_string);
     foreach my $line (@debug_message)
       {print STDERR (' ' x $leader_length,
 		     $line,
-		     ($verbose &&
-		      defined($main::last_verbose_state) &&
-		      $main::last_verbose_state ?
-		      ' ' x ($main::last_verbose_size - $debug_length) : ''),
 		     "\n")}
 
     #Reset the verbose states if verbose is true
@@ -1017,22 +1122,42 @@ sub sglob
   }
 
 
-sub printVersion
+sub getVersion
   {
+    my $full_version_flag = $_[0];
+    my $template_version_number = '1.37';
+    my $version_message = '';
+
+    #$software_version_number  - global
+    #$created_on_date          - global
+    #$verbose                  - global
+
     my $script = $0;
-    my $template_version_number = '1.35';
+    my $lmd = localtime((stat($script))[9]);
     $script =~ s/^.*\/([^\/]+)$/$1/;
-    print(($verbose ? "$script Version " : ''),$main::software_version_number,
-	  "\n");
-    verbose('Generated using perl_script_template.pl on ',
-	    $main::created_on_date,"\n",
-	    "Version $template_version_number\n",
-	    "Robert W. Leach\n",
-	    "robleach\@ccr.buffalo.edu\n",
-	    "5/8/2006\n",
-	    "Center for Computational Research\n",
-	    'Copyright 2008');
-    return(0);
+
+    if($created_on_date eq 'DATE HERE')
+      {$created_on_date = 'UNKNOWN'}
+
+    $version_message  = join((isStandardOutputToTerminal() ? "\n" : ' '),
+			     ("$script Version $software_version_number",
+			      " Created: $created_on_date",
+			      " Last modified: $lmd"));
+
+    if($full_version_flag)
+      {
+	$version_message .= (isStandardOutputToTerminal() ? "\n" : ' - ') .
+	  join((isStandardOutputToTerminal() ? "\n" : ' '),
+	       ('Generated using perl_script_template.pl ' .
+		"Version $template_version_number",
+		' Created: 5/8/2006',
+		' Author:  Robert W. Leach',
+		' Contact: robleach@ccr.buffalo.edu',
+		' Company: Center for Computational Research',
+		' Copyright 2008'));
+      }
+
+    return($version_message);
   }
 
 #This subroutine is a check to see if input is user-entered via a TTY (result
@@ -1045,3 +1170,24 @@ sub isStandardInputFromTerminal
 #considered and may defeat this subroutine.
 sub isStandardOutputToTerminal
   {return(-t STDOUT && select() eq 'main::STDOUT')}
+
+#This subroutine exits the current process.  Note, you must clean up after
+#yourself before calling this.  Does not exit is $ignore_errors is true.  Takes
+#the error number to supply to exit().
+sub quit
+  {
+    my $errno = $_[0];
+    if(!defined($errno))
+      {$errno = -1}
+    elsif($errno !~ /^[+\-]?\d+$/)
+      {
+	error("Invalid argument: [$errno].  Only integers are accepted.  Use ",
+	      "error() or warn() to supply a message, then call quit() with ",
+	      "an error number.");
+	$errno = -1;
+      }
+
+    debug("Exit status: [$errno].");
+
+    exit($errno) if(!$ignore_errors || $errno == 0);
+  }

@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-#Generated using perl_script_template.pl 1.37
+#Generated using perl_script_template.pl 1.38
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
@@ -187,7 +187,7 @@ unless(GetOptions(%$GetOptHash))
 	  'command line arguments.  The error should be above.  Please ',
 	  'correct the offending argument(s) and try again.');
     usage(1);
-    quit(1);
+    quit(-1);
   }
 
 #Print the debug mode (it checks the value of the DEBUG global variable)
@@ -213,7 +213,7 @@ if($quiet && ($verbose || $DEBUG))
     $quiet = 0;
     error('You cannot supply the quiet and (verbose or debug) flags ',
 	  'together.');
-    quit(2);
+    quit(-2);
   }
 
 #Put standard input into the input_files array if standard input has been redirected in
@@ -241,7 +241,7 @@ if(scalar(@input_files) == 0)
   {
     error('No input files detected.');
     usage(1);
-    quit(3);
+    quit(-3);
   }
 
 #Check to make sure previously generated output files won't be over-written
@@ -258,7 +258,7 @@ if(!$overwrite && defined($outfile_suffix))
 	error("The output files: [@$existing_outfiles] already exist.  ",
 	      'Use --overwrite to force an overwrite of existing files.  ',
 	      "E.g.:\n",getCommand(1),' --overwrite');
-	exit(4);
+	quit(-4);
       }
   }
 
@@ -927,7 +927,9 @@ sub getLine
     if(scalar(@{$main::infile_line_buffer->{$file_handle}->{FILE}}) == 0)
       {
 	my $line = <$file_handle>;
-	if(!eof($file_handle))
+	#The following is to deal with files that have the eof character at the
+	#end of the last line.  I may not have it completely right yet.
+	if(defined($line))
 	  {
 	    if($line =~ s/\r\n|\n\r|\r/\n/g &&
 	       !exists($main::infile_line_buffer->{$file_handle}->{WARNED}))
@@ -940,14 +942,7 @@ sub getLine
 	      split(/(?<=\n)/,$line);
 	  }
 	else
-	  {
-	    #Do the \r substitution for the last line of files that have the
-	    #eof character at the end of the last line instead of on a line by
-	    #itself.  I tested this on a file that was causing errors for the
-	    #last line and it works.
-	    $line =~ s/\r/\n/g if(defined($line));
-	    @{$main::infile_line_buffer->{$file_handle}->{FILE}} = ($line);
-	  }
+	  {@{$main::infile_line_buffer->{$file_handle}->{FILE}} = ($line)}
       }
 
     #Shift off and return the first thing in the buffer for this file handle
@@ -1125,7 +1120,7 @@ sub sglob
 sub getVersion
   {
     my $full_version_flag = $_[0];
-    my $template_version_number = '1.37';
+    my $template_version_number = '1.38';
     my $version_message = '';
 
     #$software_version_number  - global

@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-#Generated using perl_script_template.pl 1.38
+#Generated using perl_script_template.pl 1.39
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
@@ -167,7 +167,7 @@ my $GetOptHash =
    'debug:+'            => \$DEBUG,                  #OPTIONAL [Off]
    'help|?'             => \$help,                   #OPTIONAL [Off]
    'version'            => \$version,                #OPTIONAL [Off]
-   'noheader'           => \$noheader,               #OPTIONAL [Off]
+   'noheader|no-header' => \$noheader,               #OPTIONAL [Off]
   };
 
 #If there are no arguments and no files directed or piped in
@@ -670,7 +670,14 @@ sub verbose
 	#The number of characters since the last flush (i.e. since the last \n)
 	#is the current cursor position minus the cursor position after the
 	#last flush (thwarted if user prints \r's in STDOUT)
-	my $num_chars = tell(STDOUT) - sysseek(STDOUT,0,1);
+	#NOTE:
+	#  tell(STDOUT) = current cursor position
+	#  sysseek(STDOUT,0,1) = cursor position after last flush (or undef)
+	my $num_chars = sysseek(STDOUT,0,1);
+	if(defined($num_chars))
+	  {$num_chars = tell(STDOUT) - $num_chars}
+	else
+	  {$num_chars = 0}
 
 	#If there have been characters printed since the last \n, prepend a \n
 	#to the verbose message so that we do not over-write the user's STDOUT
@@ -1120,7 +1127,7 @@ sub sglob
 sub getVersion
   {
     my $full_version_flag = $_[0];
-    my $template_version_number = '1.38';
+    my $template_version_number = '1.39';
     my $version_message = '';
 
     #$software_version_number  - global

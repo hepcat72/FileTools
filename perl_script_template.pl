@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-#Generated using perl_script_template.pl 1.39
+#Generated using perl_script_template.pl 1.40
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
@@ -1107,27 +1107,45 @@ sub getCommand
   }
 
 ##
-## This subroutine checks to see if a parameter is a single file with spaces in
-## the name before doing a glob (which would break up the single file name
-## improperly).  The purpose is to allow the user to enter a single input file
-## name using double quotes and un-escaped spaces as is expected to work with
-## many programs which accept individual files as opposed to sets of files.  If
-## the user wants to enter multiple files, it is assumed that space delimiting
-## will prompt the user to realize they need to escape the spaces in the file
-## names.
+## This subroutine checks for files with spaces in the name before doing a glob
+## (which breaks up the single file name improperly even if the spaces are
+## escaped).  The purpose is to allow the user to enter input files using
+## double quotes and un-escaped spaces as is expected to work with many
+## programs which accept individual files as opposed to sets of files.  If the
+## user wants to enter multiple files, it is assumed that space delimiting will
+## prompt the user to realize they need to escape the spaces in the file names.
+## Note, this will not work on sets of files containing a mix of spaces and
+## glob characters.
 ##
 sub sglob
   {
     my $command_line_string = $_[0];
-    return(-e $command_line_string ?
-	   $command_line_string : glob($command_line_string));
+    unless(defined($command_line_string))
+      {
+	warning("Undefined command line string encountered.");
+	return($command_line_string);
+      }
+    return(#If matches unescaped spaces
+	   $command_line_string =~ /(?!\\)\s+/ &&
+	   #And all separated args are files
+	   scalar(@{[glob($command_line_string)]}) ==
+	   scalar(@{[grep {-e $_} glob($command_line_string)]}) ?
+	   #Return the glob array
+	   glob($command_line_string) :
+	   #If it's a series of all files with escaped spaces
+	   (scalar(@{[split(/(?!\\)\s/,$command_line_string)]}) ==
+	    scalar(@{[grep {-e $_} split(/(?!\\)\s+/,$command_line_string)]}) ?
+	    split(/(?!\\)\s+/,$command_line_string) :
+	    #Return the glob if a * is found or the single arg
+	    ($command_line_string =~ /\*/ ? glob($command_line_string) :
+	     $command_line_string)));
   }
 
 
 sub getVersion
   {
     my $full_version_flag = $_[0];
-    my $template_version_number = '1.39';
+    my $template_version_number = '1.40';
     my $version_message = '';
 
     #$software_version_number  - global

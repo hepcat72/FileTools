@@ -1,14 +1,14 @@
 #!/usr/bin/perl -w
 
 #Grep (for perl patterns)
-#Generated using perl_script_template.pl 1.6
+#Generated using perl_script_template.pl 1.7
 #Robert W. Leach
 #10/8/2004
 #Los Alamos National Laboratory
 #Copyright 2004
 
 markTime();
-my $software_version_number = '1.6';
+my $software_version_number = '1.7';
 
 ##
 ## Start Main
@@ -81,7 +81,7 @@ GetOptions('p|perl-pattern=s'      => \$pattern,              #REQUIRED
 	   'o|outfile-suffix=s'    => \$outfile_suffix,       #OPTIONAL [undef]
 	   'split!'                => \$split,                #OPTIONAL [Off]
 	   '<>'                    => sub {push(@input_files, #REQUIRED STDIN
-						$_[0])},      #acceptable
+						sglob($_[0]))}, #acceptable
           );
 
 #Print the argument settings if in debug mode
@@ -1139,5 +1139,40 @@ sub getCountedLine
 
     #Shift off and return the first thing in the buffer for this file handle
     return($_ = shift(@{$main::counted_line_buffer->{$file_handle}}));
+  }
+
+##
+## This subroutine checks for files with spaces in the name before doing a glob
+## (which breaks up the single file name improperly even if the spaces are
+## escaped).  The purpose is to allow the user to enter input files using
+## double quotes and un-escaped spaces as is expected to work with many
+## programs which accept individual files as opposed to sets of files.  If the
+## user wants to enter multiple files, it is assumed that space delimiting will
+## prompt the user to realize they need to escape the spaces in the file names.
+## Note, this will not work on sets of files containing a mix of spaces and
+## glob characters.
+##
+sub sglob
+  {
+    my $command_line_string = $_[0];
+    unless(defined($command_line_string))
+      {
+	warning("Undefined command line string encountered.");
+	return($command_line_string);
+      }
+    return(#If matches unescaped spaces
+	   $command_line_string =~ /(?!\\)\s+/ &&
+	   #And all separated args are files
+	   scalar(@{[glob($command_line_string)]}) ==
+	   scalar(@{[grep {-e $_} glob($command_line_string)]}) ?
+	   #Return the glob array
+	   glob($command_line_string) :
+	   #If it's a series of all files with escaped spaces
+	   (scalar(@{[split(/(?!\\)\s/,$command_line_string)]}) ==
+	    scalar(@{[grep {-e $_} split(/(?!\\)\s+/,$command_line_string)]}) ?
+	    split(/(?!\\)\s+/,$command_line_string) :
+	    #Return the glob if a * is found or the single arg
+	    ($command_line_string =~ /\*/ ? glob($command_line_string) :
+	     $command_line_string)));
   }
 

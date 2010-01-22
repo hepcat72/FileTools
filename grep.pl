@@ -1,14 +1,14 @@
 #!/usr/bin/perl -w
 
 #Grep (for perl patterns)
-#Generated using perl_script_template.pl 1.7
+#Generated using perl_script_template.pl 1.8
 #Robert W. Leach
 #10/8/2004
 #Los Alamos National Laboratory
 #Copyright 2004
 
 markTime();
-my $software_version_number = '1.7';
+my $software_version_number = '1.8';
 
 ##
 ## Start Main
@@ -65,7 +65,7 @@ GetOptions('p|perl-pattern=s'      => \$pattern,              #REQUIRED
 	   'c|count-pattern|r|record-pattern=s' =>            #OPTIONAL [undef]
 	                              \$count_pattern,
 	   'f|pattern-files=s'     => sub {push(@$pattern_files, #OPTIONAL
-						glob($_[1]))},   #[undef]
+						sglob($_[1]))},  #[undef]
 	   'n|combine-with-AND!'   => \$combine_with_and,     #OPTIONAL [Off]
 	   'e|enforce-order!'      => \$enforce_order,        #OPTIONAL [Off]
 	   'v|everything-else!'    => \$everything_else,      #OPTIONAL [Off]

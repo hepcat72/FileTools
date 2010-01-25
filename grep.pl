@@ -8,7 +8,7 @@
 #Copyright 2004
 
 markTime();
-my $software_version_number = '1.8';
+my $software_version_number = '1.9';
 
 ##
 ## Start Main
@@ -421,7 +421,7 @@ foreach my $input_file (@input_files)
 	debug("Pattern matching");
 
 	#If we've matched the pattern
-	if(($everything_else ? ($_ !~ /$pattern/) : (/$pattern/)))
+	if(($everything_else ? ($_ !~ /$pattern/s) : (/$pattern/s)))
 	  {
 	    $num_matches++;
 	    debug("Matched");
@@ -529,10 +529,16 @@ foreach my $input_file (@input_files)
 
 	    my(@new_matched_lines);
 	    push(@new_matched_lines,split(/(?<=\n)/,$lines[-1]));
+#I think this was removing blank lines at the end of records when using -r
+#I don't know why it was originally coded this way, so I'm just commenting it
+#out in case I find that it starts inserting lines...
+#	    pop(@new_matched_lines)
+#	      if(scalar(@new_matched_lines) &&
+#		 (!defined($new_matched_lines[-1]) ||
+#		  $new_matched_lines[-1] !~ /\S/));
 	    pop(@new_matched_lines)
 	      if(scalar(@new_matched_lines) &&
-		 (!defined($new_matched_lines[-1]) ||
-		  $new_matched_lines[-1] !~ /\S/));
+		 !defined($new_matched_lines[-1]));
 
 	    foreach my $new_matched_line (@new_matched_lines)
 	      {
@@ -735,9 +741,10 @@ USAGE2: $script -p perl_regular_expression [-b number] [-a number] [-m] [-k matc
      -c|--count-pattern|  OPTIONAL [] This is basically a record delimiter
      -r|--record-pattern           pattern.  This allows you to output an
                                    entire record if the record matches the
-                                   pattern supplied in -p.  Records are split
-                                   at the beginning of the line that matches
-                                   this pattern.
+                                   pattern supplied in -p (multiple line
+                                   patterns allowed).  Records are split at the
+                                   beginning of the line that matches this
+                                   pattern.
      -f|--pattern-files   REQUIRED This parameter is OPTIONAL if -p is
                                    provided.  If both -p and -f are provided,
                                    the -p flag is ignored.  Each line of the
@@ -788,7 +795,7 @@ USAGE2: $script -p perl_regular_expression [-b number] [-a number] [-m] [-k matc
                                    is supplied.
      --bs|--blast-        OPTIONAL [Off] This flag causes blast records (per
           subject-grep             subject sequence) to be counted as one line
-                                   (but it doesn\'t allow you to pattern match
+                                   (but it doesn't allow you to pattern match
                                    past hard returns).  This flag cannot be
                                    used with the -c or -t options.  If supplied
                                    with the --ba option, some records will
@@ -1120,7 +1127,11 @@ sub getCountedLine
 	    last unless(wantarray);
 	  }
 	else
-	  {debug("Appending line: [$counted_line] ARRAY SIZE: ",scalar(@{$main::counted_line_buffer->{$file_handle}}),"\n");$main::counted_line_buffer->{$file_handle}->[-1] .= $counted_line}
+	  {
+	    debug("Appending line: [$counted_line] ARRAY SIZE: ",
+		  scalar(@{$main::counted_line_buffer->{$file_handle}}),"\n");
+	    $main::counted_line_buffer->{$file_handle}->[-1] .= $counted_line;
+	  }
       }
 
     if(wantarray)

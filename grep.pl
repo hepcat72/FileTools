@@ -8,7 +8,7 @@
 #Copyright 2004
 
 markTime();
-my $software_version_number = '1.9';
+my $software_version_number = '1.10';
 
 ##
 ## Start Main
@@ -126,6 +126,7 @@ if(scalar(@input_files) == 0)
   }
 
 if(!defined($pattern) &&
+   !defined($split) &&
    (scalar(@$pattern_files) == 0 ||
     scalar(grep {!(-r $_)} @$pattern_files) ||
     scalar(grep {-B $_} @$pattern_files)))
@@ -142,6 +143,10 @@ if(!defined($pattern) &&
     usage();
     exit(1);
   }
+if(!defined($pattern) &&
+   defined($split) &&
+   scalar(@$pattern_files) == 0)
+  {$pattern = ''}
 $pattern = ($case_insensitive ? '(?i)' : '') . $pattern
   unless(scalar(@$pattern_files));
 
@@ -333,7 +338,7 @@ foreach my $input_file (@input_files)
     if($verbose && $file_by_file)
       {print STDERR ("Using pattern file: [",shift(@$pattern_files),"].\n")}
 
-    if($pattern eq '' && !$quiet)
+    if($pattern eq '' && !$split && !$quiet)
       {warning("Your pattern: [$pattern] is empty.  Every line will match.")}
 
     if($verbose)
@@ -722,7 +727,8 @@ USAGE2: $script -p perl_regular_expression [-b number] [-a number] [-m] [-k matc
                                    redirection is acceptable.  There is no flag
                                    required for input files.
      -p|--perl-pattern    REQUIRED Perl regular expression to look for in the
-                                   input file(s).
+                                   input file(s).  Optional if --split or -f is
+                                   supplied.
      -b|--lines-before    OPTIONAL [0] Number of lines to display above a
                                    matched line.
      -a|--lines-after     OPTIONAL [0] Number of lines to display below a
@@ -738,20 +744,20 @@ USAGE2: $script -p perl_regular_expression [-b number] [-a number] [-m] [-k matc
                                    automatically.
      -s|--show-file-names OPTIONAL [Off] Show file names where the pattern was
                                    matched.
-     -c|--count-pattern|  OPTIONAL [] This is basically a record delimiter
-     -r|--record-pattern           pattern.  This allows you to output an
-                                   entire record if the record matches the
+     -c|-r|               OPTIONAL [] This is basically a record delimiter
+        --count-pattern|           pattern.  This allows you to output an
+        --record-pattern           entire record if the record matches the
                                    pattern supplied in -p (multiple line
                                    patterns allowed).  Records are split at the
                                    beginning of the line that matches this
                                    pattern.
-     -f|--pattern-files   REQUIRED This parameter is OPTIONAL if -p is
-                                   provided.  If both -p and -f are provided,
-                                   the -p flag is ignored.  Each line of the
-                                   pattern file is concatenated into one
+     -f|--pattern-files   REQUIRED This parameter is OPTIONAL if -p or --split
+                                   is provided.  If both -p and -f are
+                                   provided, the -p flag is ignored.  Each line
+                                   of the pattern file is concatenated into one
                                    pattern.  Each line is joined in the final
                                    pattern with an "OR" matching behavior by
-                                   default.
+                                   default.  See -n to use "AND".
      -n|--combine-with-   OPTIONAL [Off] This parameter only works when -f is
         AND                        used and is otherwise ignored.  This
                                    parameter changes the joining behavior of
@@ -825,7 +831,9 @@ USAGE2: $script -p perl_regular_expression [-b number] [-a number] [-m] [-k matc
                                    will go into input_file.1).  If supplied
                                    with -o, the number will appear before the
                                    supplied suffix  (e.g. the first match will
-                                   go into input_file.1supplied_suffix).
+                                   go into input_file.1supplied_suffix).  If no
+                                   pattern(s) is supplied, every record (see
+                                   -c) will match.
      --verbose            OPTIONAL [Off] Verbose mode.
      -q|--quiet           OPTIONAL [Off] Quiet mode.  Turns off warnings and
                                    errors.  Cannot be used with the verbose

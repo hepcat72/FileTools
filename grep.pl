@@ -8,7 +8,7 @@
 #Copyright 2004
 
 markTime();
-my $software_version_number = '1.11';
+my $software_version_number = '1.12';
 
 ##
 ## Start Main
@@ -470,8 +470,9 @@ foreach my $input_file (@input_files)
 		  }
 
 		#Set the current output file name
-		$current_output_file = $input_file . ".$num_matches" .
-		  $outfile_suffix;
+		$current_output_file  = $input_file . ".$num_matches";
+		$current_output_file .= $outfile_suffix
+		  if(defined($outfile_suffix));
 
 		if($verbose)
 		  {print STDERR ("Opening output file: [$current_output_file]",
@@ -859,13 +860,15 @@ USAGE2: $script -p perl_regular_expression [-b number] [-a number] [-m] [-k matc
                                    pattern(s) is supplied, every record (see
                                    -c) will match.
      --split-group-size   OPTIONAL [0] Instead of splitting each line/record
-                                   into a new file, this value will indicate
-                                   how many matched lines/records go into each
-                                   output file.  0 indicates that no split
-                                   will be performed.  When supplied and non-
-                                   zero, --split is turned on automatically.
-                                   If not supplied and --split is supplied,
-                                   this value is automatically changed to 1.
+                                   into a new file (see --split), this option
+                                   will allow you to specify how many matched
+                                   lines/records should go into each output
+                                   file before stating a new one.  0 indicates
+                                   that no split will be performed.  When
+                                   supplied and non-zero, --split is turned on
+                                   automatically.  If not supplied and --split
+                                   is supplied, this value is automatically
+                                   changed to 1.
      --verbose            OPTIONAL [Off] Verbose mode.
      -q|--quiet           OPTIONAL [Off] Quiet mode.  Turns off warnings and
                                    errors.  Cannot be used with the verbose

@@ -8,7 +8,7 @@
 #Copyright 2004
 
 markTime();
-my $software_version_number = '1.10';
+my $software_version_number = '1.11';
 
 ##
 ## Start Main
@@ -41,6 +41,7 @@ my($verbose,
    $enforce_order,
    $show_files,
    $case_insensitive);
+my $split_group_size = 0;
 my $pattern_files = [];
 my $file_patterns = [];
 my $before = 0;
@@ -80,6 +81,7 @@ GetOptions('p|perl-pattern=s'      => \$pattern,              #REQUIRED
 	   'h|help!'               => \$help,                 #OPTIONAL [Off]
 	   'o|outfile-suffix=s'    => \$outfile_suffix,       #OPTIONAL [undef]
 	   'split!'                => \$split,                #OPTIONAL [Off]
+           'split-group-size=s'    => \$split_group_size,     #OPTIONAL [0]
 	   '<>'                    => sub {push(@input_files, #REQUIRED STDIN
 						sglob($_[0]))}, #acceptable
           );
@@ -125,6 +127,24 @@ if(scalar(@input_files) == 0)
     exit(1);
   }
 
+if($split_group_size !~ /^\d+$/)
+  {
+    warning("Invalid --split-group-size: [$split_group_size].  It must ",
+	    "be an integer greater than 0.  Flattening.");
+    $split_group_size = int($split_group_size);
+  }
+if($split_group_size < 0)
+  {
+    warning("Invalid --split-group-size: [$split_group_size].  It must ",
+	    "be an integer greater than 0.  Changing to 1.");
+    $split_group_size = 1;
+  }
+if($split && !$split_group_size)
+  {$split_group_size = 1}
+elsif($split_group_size && !$split)
+  {$split = 1}
+
+#If no patterns were supplied and we're not splitting (every line)
 if(!defined($pattern) &&
    !defined($split) &&
    (scalar(@$pattern_files) == 0 ||
@@ -134,15 +154,18 @@ if(!defined($pattern) &&
     error(((scalar(@$pattern_files) &&
 	    scalar(grep {!(-r $_)} @$pattern_files)) ?
 	   "Pattern files: [" . join(',',grep {!(-r $_)} @$pattern_files) .
-	   "] is not readable." :
+	   "] are not readable." :
 	   ((scalar(@$pattern_files) &&
 	    scalar(grep {-B $_} @$pattern_files)) ?
 	    "Pattern files: [" . join(',',grep {-B $_} @$pattern_files) .
-	    "] is a binary file." :
+	    "] are binary files." :
 	    "No pattern submitted."))) unless($quiet);
     usage();
     exit(1);
   }
+
+#If we've been asked to split the records and no pattern was given, create a
+#pattern that will match (and thus split) every line
 if(!defined($pattern) &&
    defined($split) &&
    scalar(@$pattern_files) == 0)
@@ -431,10 +454,11 @@ foreach my $input_file (@input_files)
 	    $num_matches++;
 	    debug("Matched");
 
-	    #Open and select the next output file if split is true
+	    #Open and select the next output file if split is true (and we've
+	    #already filled the previous file to size $split_group_size)
 	    #This overrides the previous output file selected by outfile suffix
 	    #alone
-	    if($split)
+	    if($split && ($num_matches - 1) % $split_group_size == 0)
 	      {
 		#Close the last output file if one has been opened
 		if($num_matches > 1)
@@ -834,6 +858,14 @@ USAGE2: $script -p perl_regular_expression [-b number] [-a number] [-m] [-k matc
                                    go into input_file.1supplied_suffix).  If no
                                    pattern(s) is supplied, every record (see
                                    -c) will match.
+     --split-group-size   OPTIONAL [0] Instead of splitting each line/record
+                                   into a new file, this value will indicate
+                                   how many matched lines/records go into each
+                                   output file.  0 indicates that no split
+                                   will be performed.  When supplied and non-
+                                   zero, --split is turned on automatically.
+                                   If not supplied and --split is supplied,
+                                   this value is automatically changed to 1.
      --verbose            OPTIONAL [Off] Verbose mode.
      -q|--quiet           OPTIONAL [Off] Quiet mode.  Turns off warnings and
                                    errors.  Cannot be used with the verbose

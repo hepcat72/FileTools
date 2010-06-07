@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-#Generated using perl_script_template.pl 1.40
+#Generated using perl_script_template.pl 1.41
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
@@ -291,7 +291,7 @@ verbose('[STDOUT] Opened for all output.') if(!defined($outfile_suffix));
 #Store info. about the run as a comment at the top of the output file if
 #STDOUT has been redirected to a file
 if(!isStandardOutputToTerminal() && !$noheader)
-  {print('#',getVersion(),"\n",
+  {print('#',join("\n#",split(/\n/,getVersion())),"\n",
 	 '#',scalar(localtime($^T)),"\n",
 	 '#',getCommand(1),"\n");}
 
@@ -323,7 +323,7 @@ foreach my $input_file (@input_files)
 	select(OUTPUT);
 
 	#Store info. about the run as a comment at the top of the output file
-	print('#',getVersion(),"\n",
+	print('#',join("\n#",split(/\n/,getVersion())),"\n",
 	      '#',scalar(localtime($^T)),"\n",
 	      '#',getCommand(1),"\n") unless($noheader);
       }
@@ -1145,7 +1145,7 @@ sub sglob
 sub getVersion
   {
     my $full_version_flag = $_[0];
-    my $template_version_number = '1.40';
+    my $template_version_number = '1.41';
     my $version_message = '';
 
     #$software_version_number  - global

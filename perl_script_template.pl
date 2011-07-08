@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-#Generated using perl_script_template.pl 1.41
+#Generated using perl_script_template.pl 1.42
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
@@ -35,11 +35,6 @@ my $created_on_date         = 'DATE HERE';
 ##     present) the file name '-' is pushed onto the input_files array.
 ##     Opening the dash file is the same as creating a file handle for STDIN.
 ##     You may add input file flags without disrupting this code.
-##   If no input files are needed, you may remove:
-##     The "if(!(-t STDIN || eof(STDIN))){...}" conditional
-##     The "if(scalar(@input_files) == 0)" conditional
-##     The foreach loop (and all its contents)
-##     The getLine subroutine
 ##   Enter your code anywhere, but generally in the spaces provided directly
 ##     above and below the foreach loop (marked with "ENTER YOUR FILE-
 ##     PROCESSING CODE HERE", "ENTER YOUR PRE-FILE-PROCESSING CODE HERE", and
@@ -134,9 +129,10 @@ my $created_on_date         = 'DATE HERE';
 
 use strict;
 use Getopt::Long;
+use File::Glob ':glob';
 
 #Declare & initialize variables.  Provide default values here.
-my($outfile_suffix); #Not defined so a user can overwrite the input file
+my($outfile_suffix); #Not defined so input can be overwritten
 my @input_files         = ();
 my $current_output_file = '';
 my $help                = 0;
@@ -165,7 +161,7 @@ my $GetOptHash =
    'verbose:+'          => \$verbose,                #OPTIONAL [Off]
    'quiet'              => \$quiet,                  #OPTIONAL [Off]
    'debug:+'            => \$DEBUG,                  #OPTIONAL [Off]
-   'help|?'             => \$help,                   #OPTIONAL [Off]
+   'help'               => \$help,                   #OPTIONAL [Off]
    'version'            => \$version,                #OPTIONAL [Off]
    'noheader|no-header' => \$noheader,               #OPTIONAL [Off]
   };
@@ -216,32 +212,61 @@ if($quiet && ($verbose || $DEBUG))
     quit(-2);
   }
 
-#Put standard input into the input_files array if standard input has been redirected in
+#If standard input has been redirected in
+my $outfile_stub = 'STDIN';
 if(!isStandardInputFromTerminal())
   {
-    push(@input_files,'-');
+    #If there's only one input file detected, use that input file as a stub for
+    #the output file name construction
+    if(scalar(grep {$_ ne '-'} @input_files) == 1)
+      {
+	$outfile_stub = shift(@input_files);
 
-    #Warn the user about the naming of the outfile when using STDIN
-    if(defined($outfile_suffix))
-      {warning('Input on STDIN detected along with an outfile suffix.  Your ',
-	       'output file will be named STDIN',$outfile_suffix)}
-    #Warn users when they turn on verbose and output is to the terminal
-    #(implied by no outfile suffix checked above) that verbose messages may be
-    #uncleanly overwritten
-    elsif($verbose && isStandardOutputToTerminal())
-      {warning('You have enabled --verbose, but appear to possibly be ',
-	       'outputting to the terminal.  Note that verbose messages can ',
-	       'interfere with formatting of terminal output making it ',
-	       'difficult to read.  You may want to either turn verbose off, ',
-	       'redirect output to a file, or supply an outfile suffix (-o).')}
+	#If $outfile_suffix has not been supplied, set it to an empty string
+	#so that the name of the output file will be what they supplied with -i
+	if(!defined($outfile_suffix))
+	  {
+	    #Only allow this is the supplied the overwite flag
+	    if(-e $outfile_stub && !$overwrite)
+	      {
+		error("File exists: [$outfile_stub]  Use --outfile-suffix ",
+		      '(-o) or --overwrite to continue.');
+		quit(-3);
+	      }
+	    $outfile_suffix = '';
+	  }
+      }
+    #If standard input has been redirected in and there's more than 1 input
+    #file detected
+    elsif(scalar(grep {$_ ne '-'} @input_files) > 1)
+      {
+	#Warn the user about the naming of the outfile when using STDIN
+	if(defined($outfile_suffix))
+	  {warning('Input on STDIN detected along with multiple other input ',
+		   'files and an outfile suffix.  Your output file for the ',
+		   'input on standard input will be named [',$outfile_stub,
+		   $outfile_suffix,'].')}
+      }
+
+    push(@input_files,'-') unless(scalar(grep {$_ eq '-'} @input_files));
   }
+
+#Warn users when they turn on verbose and output is to the terminal
+#(implied by no outfile suffix checked above) that verbose messages may be
+#uncleanly overwritten
+if($verbose && !defined($outfile_suffix) &&isStandardOutputToTerminal())
+  {warning('You have enabled --verbose, but appear to possibly be ',
+	   'outputting to the terminal.  Note that verbose messages can ',
+	   'interfere with formatting of terminal output making it ',
+	   'difficult to read.  You may want to either turn verbose off, ',
+	   'redirect output to a file, or supply an outfile suffix (-o).')}
 
 #Make sure there is input
 if(scalar(@input_files) == 0)
   {
     error('No input files detected.');
     usage(1);
-    quit(-3);
+    quit(-4);
   }
 
 #Check to make sure previously generated output files won't be over-written
@@ -249,16 +274,16 @@ if(scalar(@input_files) == 0)
 if(!$overwrite && defined($outfile_suffix))
   {
     my $existing_outfiles = [];
-    foreach my $output_file (map {($_ eq '-' ? 'STDIN' : $_) . $outfile_suffix}
+    foreach my $output_file (map {($_ eq '-' ? $outfile_stub : $_)
+				    . $outfile_suffix}
 			     @input_files)
       {push(@$existing_outfiles,$output_file) if(-e $output_file)}
 
     if(scalar(@$existing_outfiles))
       {
-	error("The output files: [@$existing_outfiles] already exist.  ",
-	      'Use --overwrite to force an overwrite of existing files.  ',
-	      "E.g.:\n",getCommand(1),' --overwrite');
-	quit(-4);
+	error("Files exist: [@$existing_outfiles].  Use --overwrite to ",
+	      "continue.  E.g.:\n",getCommand(1),' --overwrite');
+	quit(-5);
       }
   }
 
@@ -291,7 +316,7 @@ verbose('[STDOUT] Opened for all output.') if(!defined($outfile_suffix));
 #Store info. about the run as a comment at the top of the output file if
 #STDOUT has been redirected to a file
 if(!isStandardOutputToTerminal() && !$noheader)
-  {print('#',join("\n#",split(/\n/,getVersion())),"\n",
+  {print(getVersion(),"\n",
 	 '#',scalar(localtime($^T)),"\n",
 	 '#',getCommand(1),"\n");}
 
@@ -306,8 +331,8 @@ foreach my $input_file (@input_files)
 	##
 
 	#Set the current output file name
-	$current_output_file = ($input_file eq '-' ? 'STDIN' : $input_file)
-	  . $outfile_suffix;
+	$current_output_file = ($input_file eq '-' ?
+				$outfile_stub : $input_file) . $outfile_suffix;
 
 	#Open the output file
 	if(!open(OUTPUT,">$current_output_file"))
@@ -323,7 +348,7 @@ foreach my $input_file (@input_files)
 	select(OUTPUT);
 
 	#Store info. about the run as a comment at the top of the output file
-	print('#',join("\n#",split(/\n/,getVersion())),"\n",
+	print(getVersion(),"\n",
 	      '#',scalar(localtime($^T)),"\n",
 	      '#',getCommand(1),"\n") unless($noheader);
       }
@@ -336,7 +361,7 @@ foreach my $input_file (@input_files)
 	next;
       }
     else
-      {verbose('[',($input_file eq '-' ? 'STDIN' : $input_file),'] ',
+      {verbose('[',($input_file eq '-' ? $outfile_stub : $input_file),'] ',
 	       'Opened input file.')}
 
     my $line_num     = 0;
@@ -346,9 +371,9 @@ foreach my $input_file (@input_files)
     while(getLine(*INPUT))
       {
 	$line_num++;
-	verboseOverMe('[',($input_file eq '-' ? 'STDIN' : $input_file),'] ',
-		      "Reading line: [$line_num].") unless($line_num %
-							   $verbose_freq);
+	verboseOverMe('[',($input_file eq '-' ? $outfile_stub : $input_file),
+		      "] Reading line: [$line_num].") unless($line_num %
+							     $verbose_freq);
 
 
 
@@ -370,7 +395,7 @@ foreach my $input_file (@input_files)
 
     close(INPUT);
 
-    verbose('[',($input_file eq '-' ? 'STDIN' : $input_file),'] ',
+    verbose('[',($input_file eq '-' ? $outfile_stub : $input_file),'] ',
 	    'Input file done.  Time taken: [',scalar(markTime()),' Seconds].');
 
     #If an output file name suffix is set
@@ -537,12 +562,16 @@ end_print
       {
         print << 'end_print';
 
-     -i|--input-file*     REQUIRED Space-separated input file(s inside quotes).
-                                   Standard input via redirection is
-                                   acceptable.  Perl glob characters (e.g. '*')
-                                   are acceptable inside quotes (e.g.
-                                   -i "*.txt *.text").  See --help for a
-                                   description of the input file format.
+     -i|--input-file*     REQUIRED Space-separated input file(s) or input file
+                                   name stub (used for naming files when
+                                   redirecting data into this script).  Note,
+                                   -o can be used to append to input file name
+                                   stubs.
+                                   For file inputs, the script will expand BSD
+                                   glob characters such as '*', '?', and
+                                   '[...]' (e.g. -i "*.txt *.text").  See
+                                   --help for a description of the input file
+                                   format.
                                    *No flag required.
      -o|--outfile-suffix  OPTIONAL [nothing] This suffix is added to the input
                                    file names to use as output files.
@@ -563,8 +592,8 @@ end_print
      --quiet              OPTIONAL Quiet mode.  Suppresses warnings and errors.
                                    Cannot be used with the verbose or debug
                                    flags.
-     --help|-?            OPTIONAL Help.  Print an explanation of the script
-                                   and its input/output files.
+     --help               OPTIONAL Print an explanation of the script and its
+                                   input/output files.
      --version            OPTIONAL Print software version number.  If verbose
                                    mode is on, it also prints the template
                                    version used to standard error.
@@ -1128,24 +1157,24 @@ sub sglob
     return(#If matches unescaped spaces
 	   $command_line_string =~ /(?!\\)\s+/ &&
 	   #And all separated args are files
-	   scalar(@{[glob($command_line_string)]}) ==
-	   scalar(@{[grep {-e $_} glob($command_line_string)]}) ?
+	   scalar(@{[bsd_glob($command_line_string)]}) ==
+	   scalar(@{[grep {-e $_} bsd_glob($command_line_string)]}) ?
 	   #Return the glob array
-	   glob($command_line_string) :
+	   bsd_glob($command_line_string) :
 	   #If it's a series of all files with escaped spaces
 	   (scalar(@{[split(/(?!\\)\s/,$command_line_string)]}) ==
 	    scalar(@{[grep {-e $_} split(/(?!\\)\s+/,$command_line_string)]}) ?
 	    split(/(?!\\)\s+/,$command_line_string) :
-	    #Return the glob if a * is found or the single arg
-	    ($command_line_string =~ /\*/ ? glob($command_line_string) :
-	     $command_line_string)));
+	    #Return the single arg
+	    ($command_line_string =~ /\*|\?|\[/ ?
+	     bsd_glob($command_line_string) : $command_line_string)));
   }
 
 
 sub getVersion
   {
     my $full_version_flag = $_[0];
-    my $template_version_number = '1.41';
+    my $template_version_number = '1.42';
     my $version_message = '';
 
     #$software_version_number  - global
@@ -1159,20 +1188,20 @@ sub getVersion
     if($created_on_date eq 'DATE HERE')
       {$created_on_date = 'UNKNOWN'}
 
-    $version_message  = join((isStandardOutputToTerminal() ? "\n" : ' '),
-			     ("$script Version $software_version_number",
-			      " Created: $created_on_date",
-			      " Last modified: $lmd"));
+    $version_message  = '#' . join("\n#",
+				   ("$script Version $software_version_number",
+				    " Created: $created_on_date",
+				    " Last modified: $lmd"));
 
     if($full_version_flag)
       {
-	$version_message .= (isStandardOutputToTerminal() ? "\n" : ' - ') .
-	  join((isStandardOutputToTerminal() ? "\n" : ' '),
+	$version_message .= "\n#" .
+	  join("\n#",
 	       ('Generated using perl_script_template.pl ' .
 		"Version $template_version_number",
 		' Created: 5/8/2006',
 		' Author:  Robert W. Leach',
-		' Contact: robleach@ccr.buffalo.edu',
+		' Contact: rwleach@ccr.buffalo.edu',
 		' Company: Center for Computational Research',
 		' Copyright 2008'));
       }

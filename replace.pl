@@ -9,7 +9,7 @@
 #Copyright 2005
 
 my $template_version_number = '1.20';
-my $software_version_number = '1.3';
+my $software_version_number = '1.4';
 
 ##
 ## Start Main
@@ -20,8 +20,8 @@ use Getopt::Long;
 
 #Declare variables
 my(@input_files,
-   $search_string,
-   $replace_string,
+   $replace,
+   $with,
    $current_output_file);
 my $extensions = [];
 #Initialize flags
@@ -46,8 +46,8 @@ if(scalar(@ARGV) == 0)
   }
 
 #Get the input options
-GetOptions('s|search-string=s'  => \$search_string,          #REQUIRED
-	   'r|replace-string=s' => \$replace_string,         #REQUIRED
+GetOptions('r|replace=s'        => \$replace,                #REQUIRED
+	   'w|with=s'           => \$with,                   #REQUIRED
 	   'e|extensions=s'     => sub {push(@$extensions,   #OPTIONAL [undef]
 					     $_[1])},
 	   'p|perl-regex-mode!' => \$regex_mode_flag,        #OPTIONAL [Off]
@@ -106,10 +106,10 @@ debug("Extensions: ['",join("','",@$extensions),"']");
 
 #Grab search string from flagless parameters if it wasn't supplied and the
 #first flagless param isn't a file/directory
-if((!defined($search_string) || $search_string eq '') &&
+if((!defined($replace) || $replace eq '') &&
    scalar(@input_files) && !(-e $input_files[0]) && $input_files[0] ne '')
-  {$search_string = shift(@input_files)}
-elsif(!defined($search_string) || $search_string eq '')
+  {$replace = shift(@input_files)}
+elsif(!defined($replace) || $replace eq '')
   {
     error("No search string supplied.");
     usage();
@@ -118,10 +118,10 @@ elsif(!defined($search_string) || $search_string eq '')
 
 #Grab replace string from flagless parameters if it wasn't supplied and the
 #first flagless param isn't a file/directory
-if((!defined($replace_string) || $replace_string eq '') &&
+if((!defined($with) || $with eq '') &&
    scalar(@input_files) && !(-e $input_files[0]) && $input_files[0] ne '')
-  {$replace_string = shift(@input_files)}
-elsif(!defined($replace_string))
+  {$with = shift(@input_files)}
+elsif(!defined($with))
   {
     warning("No replace string was supplied.  You must explicitly supply an ",
 	    "empty string if there's no replacement.");
@@ -135,10 +135,10 @@ elsif(!defined($replace_string))
 
 #Fix the search string to escape metacharacters (if we're not in regex mode)
 if(!$regex_mode_flag)
-  {$search_string = quotemeta($search_string)}
+  {$replace = quotemeta($replace)}
 
 #Fix the replace string to escape forward slashes
-#$replace_string =~ s/\//\\\//g;
+#$with =~ s/\//\\\//g;
 
 #Make sure there is input
 if(scalar(@input_files) == 0)
@@ -164,8 +164,8 @@ if(!defined($outfile_suffix))
 foreach my $input_file (@input_files)
   {
     searchrep($input_file,
-	      $search_string,
-	      $replace_string,
+	      $replace,
+	      $with,
 	      $recurse_flag,
 	      $force,
 	      $extensions);
@@ -262,10 +262,10 @@ USAGE2: $script -s search_string -r replace_string [-p] [--recurse] [-e "extensi
                           REQUIRED Input file(s).  Standard input via
                                    redirection is acceptable.  There is no flag
                                    required for input files.
-     -s|--search-string*  REQUIRED The string to search for in the input files.
+     -r|--replace*        REQUIRED The string to search for in the input files.
                                    *The flag may be omitted if this is the
                                    first argument.
-     -r|--replace-string* REQUIRED The string to replace the search string with
+     -w|--with*           REQUIRED The string to replace the search string with
                                    in the input files.
                                    *The flag may be omitted if this is the
                                    second argument and no flag was used for the
@@ -681,8 +681,8 @@ sub getCommand
 sub searchrep
   {
     my $input_file     = $_[0];
-    my $search_string  = $_[1];
-    my $replace_string = $_[2];
+    my $replace  = $_[1];
+    my $with = $_[2];
     my $recurse_flag   = $_[3];
     my $force          = $_[4];
     my $extensions     = $_[5];
@@ -708,8 +708,8 @@ sub searchrep
 
 	foreach(@list)
 	  {searchrep($_,
-		     $search_string,
-		     $replace_string,
+		     $replace,
+		     $with,
 		     $recurse_flag,
 		     $force,
 		     $extensions,
@@ -783,10 +783,10 @@ sub searchrep
 		       ($input_file eq '-' ? 'STDIN' : $input_file),
 		       "] Reading line $line_num.")}
 
-	    if(s/($search_string)/$replace_string/g)
+	    if(s/($replace)/$with/g)
 	      {
 		$changed = 1;
-		debug("Replacing [$1] with [$replace_string]");
+		debug("Replacing [$1] with [$with]");
 	      }
 
 	    if(defined($outfile_suffix) &&

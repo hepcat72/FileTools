@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-#Generated using perl_script_template.pl 1.42
+#Generated using perl_script_template.pl 1.43
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
@@ -134,6 +134,7 @@ use File::Glob ':glob';
 #Declare & initialize variables.  Provide default values here.
 my($outfile_suffix); #Not defined so input can be overwritten
 my @input_files         = ();
+my @outdirs             = ();
 my $current_output_file = '';
 my $help                = 0;
 my $version             = 0;
@@ -151,19 +152,21 @@ my $ignore_errors = 0;
 my $GetOptHash =
   {# ENTER YOUR COMMAND LINE PARAMETERS HERE AS BELOW
 
-   'i|input-file=s'     => sub {push(@input_files,   #REQUIRED unless <> is
-				     sglob($_[1]))}, #         supplied
-   '<>'                 => sub {push(@input_files,   #REQUIRED unless -i is
-				     sglob($_[0]))}, #         supplied
-   'o|outfile-suffix=s' => \$outfile_suffix,         #OPTIONAL [undef]
-   'force|overwrite'    => \$overwrite,              #OPTIONAL [Off]
-   'ignore'             => \$ignore_errors,          #OPTIONAL [Off]
-   'verbose:+'          => \$verbose,                #OPTIONAL [Off]
-   'quiet'              => \$quiet,                  #OPTIONAL [Off]
-   'debug:+'            => \$DEBUG,                  #OPTIONAL [Off]
-   'help'               => \$help,                   #OPTIONAL [Off]
-   'version'            => \$version,                #OPTIONAL [Off]
-   'noheader|no-header' => \$noheader,               #OPTIONAL [Off]
+   'i|input-file=s'     => sub {push(@input_files,     #REQUIRED unless <> is
+				     [sglob($_[1])])}, #         supplied
+   '<>'                 => sub {push(@input_files,     #REQUIRED unless -i is
+				     [sglob($_[0])])}, #         supplied
+   'o|outfile-suffix=s' => \$outfile_suffix,           #OPTIONAL [undef]
+   'outdir=s'           => sub {push(@outdirs,         #OPTIONAL
+				     [sglob($_[1])])},
+   'force|overwrite'    => \$overwrite,                #OPTIONAL [Off]
+   'ignore'             => \$ignore_errors,            #OPTIONAL [Off]
+   'verbose:+'          => \$verbose,                  #OPTIONAL [Off]
+   'quiet'              => \$quiet,                    #OPTIONAL [Off]
+   'debug:+'            => \$DEBUG,                    #OPTIONAL [Off]
+   'help'               => \$help,                     #OPTIONAL [Off]
+   'version'            => \$version,                  #OPTIONAL [Off]
+   'noheader|no-header' => \$noheader,                 #OPTIONAL [Off]
   };
 
 #If there are no arguments and no files directed or piped in
@@ -177,7 +180,7 @@ if(scalar(@ARGV) == 0 && isStandardInputFromTerminal())
 unless(GetOptions(%$GetOptHash))
   {
     #Try to guess which arguments GetOptions is complaining about
-    my @possibly_bad = grep {!(-e $_)} @input_files;
+    my @possibly_bad = grep {!(-e $_)} map {@$_} @input_files;
 
     error('Getopt::Long::GetOptions reported an error while parsing the ',
 	  'command line arguments.  The error should be above.  Please ',
@@ -218,9 +221,10 @@ if(!isStandardInputFromTerminal())
   {
     #If there's only one input file detected, use that input file as a stub for
     #the output file name construction
-    if(scalar(grep {$_ ne '-'} @input_files) == 1)
+    if(scalar(grep {$_ ne '-'} map {@$_} @input_files) == 1)
       {
-	$outfile_stub = shift(@input_files);
+	$outfile_stub = (grep {$_ ne '-'} map {@$_} @input_files)[0];
+	@input_files = ();
 
 	#If $outfile_suffix has not been supplied, set it to an empty string
 	#so that the name of the output file will be what they supplied with -i
@@ -238,7 +242,7 @@ if(!isStandardInputFromTerminal())
       }
     #If standard input has been redirected in and there's more than 1 input
     #file detected
-    elsif(scalar(grep {$_ ne '-'} @input_files) > 1)
+    elsif(scalar(grep {$_ ne '-'} map {@$_} @input_files) > 1)
       {
 	#Warn the user about the naming of the outfile when using STDIN
 	if(defined($outfile_suffix))
@@ -248,7 +252,16 @@ if(!isStandardInputFromTerminal())
 		   $outfile_suffix,'].')}
       }
 
-    push(@input_files,'-') unless(scalar(grep {$_ eq '-'} @input_files));
+    #Unless the dash was supplied by the user on the command line, push it on
+    unless(scalar(grep {$_ eq '-'} map {@$_} @input_files))
+      {
+	#If there are other input files present, push it
+	if(scalar(@input_files))
+	  {push(@{$input_files[-1]},'-')}
+	#Else create a new input file set with it as the only file member
+	else
+	  {@input_files = (['-'])}
+      }
   }
 
 #Warn users when they turn on verbose and output is to the terminal
@@ -269,21 +282,181 @@ if(scalar(@input_files) == 0)
     quit(-4);
   }
 
+#If output directories have been provided
+if(scalar(@outdirs))
+  {
+    #If there are the same number of output directory sets as input file sets
+    if(scalar(@outdirs) == scalar(@input_files))
+      {
+	#Unless all the output directory sets contain 1 specified directory
+	unless(scalar(grep {scalar(@$_) == 1} @outdirs) ==
+	       scalar(@input_files) ||
+	       #Or each output directory set has the same number of directories
+	       #as the corresponding input files
+	       scalar(grep {scalar(@{$outdirs[$_]}) ==
+			      scalar(@{$input_files[$_]})}
+		      (0..$#{@input_files})) == scalar(@input_files))
+	  {
+	    error('The number of --outdir\'s is invalid.  You may either ',
+		  'supply 1, 1 per input file set, 1 per input file, or ',
+		  'where all sets are the same size, 1 per input file is a ',
+		  'single input file set.  You supplied [',
+		  join(',',map {scalar(@$_)} @outdirs),
+		  '] output directories and [',
+		  join(',',map {scalar(@$_)} @input_files),
+		  '] input files.');
+	    quit(-6);
+	  }
+      }
+    elsif(scalar(@outdirs) == 1 && scalar(@{$outdirs[0]}) != 1)
+      {
+	#Unless all the input file sets are the same size as the single set of
+	#output directories
+	unless(scalar(grep {scalar(@$_) == scalar(@{$outdirs[0]})}
+		      @input_files) == scalar(@input_files))
+	  {
+	    error('The number of --outdir\'s is invalid.  You may either ',
+		  'supply 1, 1 per input file set, 1 per input file, or ',
+		  'where all sets are the same size, 1 per input file is a ',
+		  'single input file set.  You supplied [',
+		  join(',',map {scalar(@$_)} @outdirs),
+		  '] output directories and [',
+		  join(',',map {scalar(@$_)} @input_files),
+		  '] input files.');
+	    quit(-7);
+	  }
+      }
+  }
+
 #Check to make sure previously generated output files won't be over-written
 #Note, this does not account for output redirected on the command line
 if(!$overwrite && defined($outfile_suffix))
   {
     my $existing_outfiles = [];
-    foreach my $output_file (map {($_ eq '-' ? $outfile_stub : $_)
-				    . $outfile_suffix}
-			     @input_files)
-      {push(@$existing_outfiles,$output_file) if(-e $output_file)}
+    my $set_num = 0;
+    foreach my $input_file_set (@input_files)
+      {
+	my $file_num = 0;
+	#For each output file *name* (this will contain the input file name's
+	#path if it was supplied)
+	foreach my $output_file (map {($_ eq '-' ? $outfile_stub : $_)
+					. $outfile_suffix}
+				 @$input_file_set)
+	  {
+	    #If at least 1 output directory was supplied
+	    if(scalar(@outdirs))
+	      {
+		#Eliminate any path strings from the output file name that came
+		#from the input file supplied
+		$output_file =~ s/.*\///;
+
+		#If there is the same number of output directory sets as input
+		#file sets
+		if(scalar(@outdirs) > 1 &&
+		   scalar(@outdirs) == scalar(@input_files))
+		  {
+		    #If there's 1 directory per input file set
+		    if(scalar(@{$outdirs[$set_num]}) == 1)
+		      {
+			#Each set of input files has 1 output directory
+
+			$output_file = $outdirs[$set_num]->[0]
+			  . ($outdirs[$set_num]->[0] =~ /\/$/ ? '' : '/')
+			    . $output_file;
+		      }
+		    #Else there must be the same number of directories
+		    elsif(scalar(@{$outdirs[$set_num]}) ==
+			  scalar(@{$input_files[$set_num]}))
+		      {
+			#Each input file has its own output directory
+
+			$output_file = $outdirs[$set_num]->[$file_num] .
+			  ($outdirs[$set_num]->[$file_num] =~ /\/$/ ? '' : '/')
+			    . $output_file;
+		      }
+		    #Else Error
+		    else
+		      {
+			error("Cannot determine corresponding directory for ",
+			      "$output_file.  Will output to current ",
+			      "directory.");
+		      }
+		  }
+		#There must be only 1 output directory set, so if it's more
+		#than 1 directory and has the same number of directories as
+		#each set of input files
+		elsif(scalar(@{$outdirs[0]}) > 1 &&
+		      scalar(grep {scalar(@{$outdirs[0]}) == scalar(@$_)}
+			     @input_files) == scalar(@input_files))
+		  {
+		    #Each set of input files has the same number of input
+		    #files (guaranteed in code above), so each one in series
+		    #will output to the corresponding directory specified in
+		    #the single output directory set
+
+		    $output_file = $outdirs[0]->[$file_num]
+		      . ($outdirs[0]->[$file_num] =~ /\/$/ ? '' : '/')
+			. $output_file;
+		  }
+		#There must be only 1 output directory set, so if it's more
+		#than 1 directory and has the same number of directories as the
+		#number of input file sets
+		elsif(scalar(@{$outdirs[0]}) > 1 &&
+		      scalar(@{$outdirs[0]}) == scalar(@input_files))
+		  {
+		    #Each file set will output to the corresponding directory
+		    #in the first set of directories in series.  Note, if the
+		    #number of input files in each set and the number of sets
+		    #is the same, the default mechanism is for a single set's
+		    #files to go in the various directories in the single set
+		    #of directories.  For now, this cannot be overridden.
+
+		    $output_file = $outdirs[0]->[$set_num]
+		      . ($outdirs[0]->[$set_num] =~ /\/$/ ? '' : '/')
+			. $output_file;
+		  }
+		#It must be a single output directory
+		else
+		  {
+		    #All input files have the same output directory
+
+		    $output_file = $outdirs[0]->[0]
+		      . ($outdirs[0]->[0] =~ /\/$/ ? '' : '/')
+			. $output_file;
+		  }
+	      }
+
+	    $file_num++;
+	    push(@$existing_outfiles,$output_file) if(-e $output_file);
+	  }
+	$set_num++;
+      }
 
     if(scalar(@$existing_outfiles))
       {
 	error("Files exist: [@$existing_outfiles].  Use --overwrite to ",
 	      "continue.  E.g.:\n",getCommand(1),' --overwrite');
 	quit(-5);
+      }
+  }
+
+#Create the output directories
+if(scalar(@outdirs))
+  {
+    foreach my $dir_set (@outdirs)
+      {
+	foreach my $dir (@$dir_set)
+	  {
+	    if(-e $dir)
+	      {
+		warning('The --overwrite flag will not empty or delete ',
+			'existing output directories.  If you wish to delete ',
+			'existing output directories, you must do it ',
+			'manually.') if($overwrite)
+		}
+	    else
+	      {mkdir($dir)}
+	  }
       }
   }
 
@@ -320,60 +493,159 @@ if(!isStandardOutputToTerminal() && !$noheader)
 	 '#',scalar(localtime($^T)),"\n",
 	 '#',getCommand(1),"\n");}
 
-#For each input file
-foreach my $input_file (@input_files)
+#For each input file set
+my $set_num = 0;
+foreach my $input_file_set (@input_files)
   {
-    #If an output file name suffix has been defined
-    if(defined($outfile_suffix))
+    my $file_num = 0;
+    #For each output file *name* (this will contain the input file name's
+    #path if it was supplied)
+
+    #For each input file
+    foreach my $input_file (@$input_file_set)
       {
-	##
-	## Open and select the next output file
-	##
+	my $file_num = 0;
 
-	#Set the current output file name
-	$current_output_file = ($input_file eq '-' ?
-				$outfile_stub : $input_file) . $outfile_suffix;
+	#If an output file name suffix has been defined
+	if(defined($outfile_suffix))
+	  {
+	    ##
+	    ## Open and select the next output file
+	    ##
 
-	#Open the output file
-	if(!open(OUTPUT,">$current_output_file"))
+	    #Set the current output file name
+	    $current_output_file = ($input_file eq '-' ?
+				    $outfile_stub : $input_file)
+	      . $outfile_suffix;
+	  }
+
+	#If at least 1 output directory was supplied
+	if(scalar(@outdirs))
+	  {
+	    #Eliminate any path strings from the output file name that came
+	    #from the input file supplied
+	    $current_output_file =~ s/.*\///;
+
+	    #If there is the same number of output directory sets as input
+	    #file sets
+	    if(scalar(@outdirs) > 1 &&
+	       scalar(@outdirs) == scalar(@input_files))
+	      {
+		#If there's 1 directory per input file set
+		if(scalar(@{$outdirs[$set_num]}) == 1)
+		  {
+		    #Each set of input files has 1 output directory
+
+		    $current_output_file = $outdirs[$set_num]->[0]
+		      . ($outdirs[$set_num]->[0] =~ /\/$/ ? '' : '/')
+			. $current_output_file;
+		  }
+		#Else there must be the same number of directories
+		elsif(scalar(@{$outdirs[$set_num]}) ==
+		      scalar(@{$input_files[$set_num]}))
+		  {
+		    #Each input file has its own output directory
+
+		    $current_output_file = $outdirs[$set_num]->[$file_num]
+		      . ($outdirs[$set_num]->[$file_num] =~ /\/$/ ? '' : '/')
+			. $current_output_file;
+		  }
+		#Else Error
+		else
+		  {
+		    error("Cannot determine corresponding directory for ",
+			  "$current_output_file.  Will output to current ",
+			  "directory.");
+		  }
+	      }
+	    #There must be only 1 output directory set, so if it's more
+	    #than 1 directory and has the same number of directories as
+	    #each set of input files
+	    elsif(scalar(@{$outdirs[0]}) > 1 &&
+		  scalar(grep {scalar(@{$outdirs[0]}) == scalar(@$_)}
+			 @input_files) == scalar(@input_files))
+	      {
+		#Each set of input files has the same number of input
+		#files (guaranteed in code above), so each one in series
+		#will output to the corresponding directory specified in
+		#the single output directory set
+
+		$current_output_file = $outdirs[0]->[$file_num]
+		  . ($outdirs[0]->[$file_num] =~ /\/$/ ? '' : '/')
+		    . $current_output_file;
+	      }
+	    #There must be only 1 output directory set, so if it's more
+	    #than 1 directory and has the same number of directories as the
+	    #number of input file sets
+	    elsif(scalar(@{$outdirs[0]}) > 1 &&
+		  scalar(@{$outdirs[0]}) == scalar(@input_files))
+	      {
+		#Each file set will output to the corresponding directory
+		#in the first set of directories in series.  Note, if the
+		#number of input files in each set and the number of sets
+		#is the same, the default mechanism is for a single set's
+		#files to go in the various directories in the single set
+		#of directories.  For now, this cannot be overridden.
+
+		$current_output_file = $outdirs[0]->[$set_num]
+		  . ($outdirs[0]->[$set_num] =~ /\/$/ ? '' : '/')
+		    . $current_output_file;
+	      }
+	    #It must be a single output directory
+	    else
+	      {
+		#All input files have the same output directory
+
+		$current_output_file = $outdirs[0]->[0]
+		  . ($outdirs[0]->[0] =~ /\/$/ ? '' : '/')
+		    . $current_output_file;
+	      }
+	  }
+
+	if(defined($outfile_suffix) || scalar(@outdirs))
+	  {
+	    #Open the output file
+	    if(!open(OUTPUT,">$current_output_file"))
+	      {
+		#Report an error and iterate if there was an error
+		error("Unable to open output file: [$current_output_file].\n",
+		      $!);
+		next;
+	      }
+	    else
+	      {verbose("[$current_output_file] Opened output file.")}
+
+	    #Select the output file handle
+	    select(OUTPUT);
+
+	    #Store info about the run as a comment at the top of the output
+	    print(getVersion(),"\n",
+		  '#',scalar(localtime($^T)),"\n",
+		  '#',getCommand(1),"\n") unless($noheader);
+	  }
+
+	#Open the input file
+	if(!open(INPUT,$input_file))
 	  {
 	    #Report an error and iterate if there was an error
-	    error("Unable to open output file: [$current_output_file].\n$!");
+	    error("Unable to open input file: [$input_file].\n$!");
 	    next;
 	  }
 	else
-	  {verbose("[$current_output_file] Opened output file.")}
+	  {verbose('[',($input_file eq '-' ? $outfile_stub : $input_file),'] ',
+		   'Opened input file.')}
 
-	#Select the output file handle
-	select(OUTPUT);
+	my $line_num     = 0;
+	my $verbose_freq = 100;
 
-	#Store info. about the run as a comment at the top of the output file
-	print(getVersion(),"\n",
-	      '#',scalar(localtime($^T)),"\n",
-	      '#',getCommand(1),"\n") unless($noheader);
-      }
-
-    #Open the input file
-    if(!open(INPUT,$input_file))
-      {
-	#Report an error and iterate if there was an error
-	error("Unable to open input file: [$input_file].\n$!");
-	next;
-      }
-    else
-      {verbose('[',($input_file eq '-' ? $outfile_stub : $input_file),'] ',
-	       'Opened input file.')}
-
-    my $line_num     = 0;
-    my $verbose_freq = 100;
-
-    #For each line in the current input file
-    while(getLine(*INPUT))
-      {
-	$line_num++;
-	verboseOverMe('[',($input_file eq '-' ? $outfile_stub : $input_file),
-		      "] Reading line: [$line_num].") unless($line_num %
-							     $verbose_freq);
+	#For each line in the current input file
+	while(getLine(*INPUT))
+	  {
+	    $line_num++;
+	    verboseOverMe('[',($input_file eq '-' ?
+			       $outfile_stub : $input_file),
+			  "] Reading line: [$line_num].")
+	      unless($line_num % $verbose_freq);
 
 
 
@@ -381,9 +653,9 @@ foreach my $input_file (@input_files)
 
 
 
-	##
-	## ENTER YOUR FILE-PROCESSING CODE HERE
-	##
+	    ##
+	    ## ENTER YOUR FILE-PROCESSING CODE HERE
+	    ##
 
 
 
@@ -391,22 +663,24 @@ foreach my $input_file (@input_files)
 
 
 
-      }
+	  }
 
-    close(INPUT);
+	close(INPUT);
 
-    verbose('[',($input_file eq '-' ? $outfile_stub : $input_file),'] ',
-	    'Input file done.  Time taken: [',scalar(markTime()),' Seconds].');
+	verbose('[',($input_file eq '-' ? $outfile_stub : $input_file),'] ',
+		'Input file done.  Time taken: [',scalar(markTime()),
+		' Seconds].');
 
-    #If an output file name suffix is set
-    if(defined($outfile_suffix))
-      {
-	#Select standard out
-	select(STDOUT);
-	#Close the output file handle
-	close(OUTPUT);
+	#If an output file name suffix is set
+	if(defined($outfile_suffix))
+	  {
+	    #Select standard out
+	    select(STDOUT);
+	    #Close the output file handle
+	    close(OUTPUT);
 
-	verbose("[$current_output_file] Output file done.");
+	    verbose("[$current_output_file] Output file done.");
+	  }
       }
   }
 
@@ -523,6 +797,89 @@ rwleach\@ccr.buffalo.edu
 
 * OUTPUT FORMAT: DESCRIBE OUTPUT FORMAT HERE
 
+* ADVANCED FILE I/O FEATURES: Sets of input files, each with different output
+                              directories can be supplied.  Supply each file
+                              set with an additional -i (or --input-file) flag.
+                              The files will have to have quotes around them so
+                              that they are all associated with the preceding
+                              -i option.  Likewise, output directories
+                              (--outdir) can be supplied multiple times in the
+                              same order so that each input file set can be
+                              output into a different directory.  If the number
+                              of files in each set is the same, you can supply
+                              all output directories as a single set instead of
+                              each having a separate --outdir flag.  Here are
+                              some examples of what you can do:
+
+                              -i 'a b c' --outdir '1' -i 'd e f' --outdir '2'
+
+                                 1/
+                                   a
+                                   b
+                                   c
+                                 2/
+                                   d
+                                   e
+                                   f
+
+                              -i 'a b c' -i 'd e f' --outdir '1 2 3'
+
+                                 1/
+                                   a
+                                   d
+                                 2/
+                                   b
+                                   e
+                                 3/
+                                   c
+                                   f
+
+                                 This is the default behavior if the number of
+                                 sets and the number of files per set are all
+                                 the same.  For example, this is what will
+                                 happen:
+
+                                    -i 'a b' -i 'd e' --outdir '1 2'
+
+                                       1/
+                                         a
+                                         d
+                                       2/
+                                         b
+                                         e
+
+                                 NOT this: 1/a,b 2/d,e  To do this, you must
+                                 supply the --outdir flag for each set, like
+                                 this:
+
+                                    -i 'a b' -i 'd e' --outdir '1' --outdir '2'
+
+                              -i 'a b c' -i 'd e f' --outdir '1 2'
+
+                                 1/
+                                   a
+                                   b
+                                   c
+                                 2/
+                                   d
+                                   e
+                                   f
+
+                              -i 'a b c' --outdir '1 2 3' -i 'd e f' --outdir '4 5 6'
+
+                                 1/
+                                   a
+                                 2/
+                                   b
+                                 3/
+                                   c
+                                 4/
+                                   d
+                                 5/
+                                   e
+                                 6/
+                                   f
+
 end_print
 
     return(0);
@@ -562,16 +919,15 @@ end_print
       {
         print << 'end_print';
 
-     -i|--input-file*     REQUIRED Space-separated input file(s) or input file
-                                   name stub (used for naming files when
-                                   redirecting data into this script).  Note,
-                                   -o can be used to append to input file name
-                                   stubs.
-                                   For file inputs, the script will expand BSD
-                                   glob characters such as '*', '?', and
-                                   '[...]' (e.g. -i "*.txt *.text").  See
+     -i|--input-file*     REQUIRED Space-separated input file(s) (or when used
+                                   with standard input present: file name stub
+                                   used for naming files).  Note, -o can be
+                                   used to append to what is supplied here to
+                                   form new output file names.  The script will
+                                   expand BSD glob characters such as '*', '?',
+                                   and '[...]' (e.g. -i "*.txt *.text").  See
                                    --help for a description of the input file
-                                   format.
+                                   format.  See --help for advanced usage.
                                    *No flag required.
      -o|--outfile-suffix  OPTIONAL [nothing] This suffix is added to the input
                                    file names to use as output files.
@@ -579,6 +935,11 @@ end_print
                                    result in the output file name to be "STDIN"
                                    with your suffix appended.  See --help for a
                                    description of the output file format.
+     --outdir             OPTIONAL [input file location] Supply a directory to
+                                   put output files.  When supplied without -o,
+                                   the output file names will be the same as
+                                   the input file names.  See --help for
+                                   advanced usage.
      --force|--overwrite  OPTIONAL Force overwrite of existing output files.
                                    Only used when the -o option is supplied.
      --ignore             OPTIONAL Ignore critical errors & continue
@@ -1174,7 +1535,7 @@ sub sglob
 sub getVersion
   {
     my $full_version_flag = $_[0];
-    my $template_version_number = '1.42';
+    my $template_version_number = '1.43';
     my $version_message = '';
 
     #$software_version_number  - global

@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-#Generated using perl_script_template.pl 1.43
+#Generated using perl_script_template.pl 1.44
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
@@ -120,7 +120,8 @@ my $created_on_date         = 'DATE HERE';
 ##     STDOUT is not selected or output is not going to a TTY.
 ##   quit subroutine
 ##     Makes a call to exit to stop the script unless the --ignore-errors flag
-##     was provided on the command line.
+##     was provided on the command line.  You may supply an exit value, but
+##     note that this template uses negative values for default calls to quit.
 ##
 
 ##
@@ -140,6 +141,7 @@ my $help                = 0;
 my $version             = 0;
 my $overwrite           = 0;
 my $noheader            = 0;
+my $error_limit         = 50;
 
 #These variables (in main) are used by the following subroutines:
 #verbose, error, warning, debug, getCommand, quit, and usage
@@ -153,7 +155,7 @@ my $GetOptHash =
   {# ENTER YOUR COMMAND LINE PARAMETERS HERE AS BELOW
 
    'i|input-file=s'     => sub {push(@input_files,     #REQUIRED unless <> is
-				     [sglob($_[1])])}, #         supplied
+			             [sglob($_[1])])}, #         supplied
    '<>'                 => sub {push(@input_files,     #REQUIRED unless -i is
 				     [sglob($_[0])])}, #         supplied
    'o|outfile-suffix=s' => \$outfile_suffix,           #OPTIONAL [undef]
@@ -167,6 +169,7 @@ my $GetOptHash =
    'help'               => \$help,                     #OPTIONAL [Off]
    'version'            => \$version,                  #OPTIONAL [Off]
    'noheader|no-header' => \$noheader,                 #OPTIONAL [Off]
+   'error-type-limit=s' => \$error_limit,              #OPTIONAL [0]
   };
 
 #If there are no arguments and no files directed or piped in
@@ -213,6 +216,14 @@ if($quiet && ($verbose || $DEBUG))
     error('You cannot supply the quiet and (verbose or debug) flags ',
 	  'together.');
     quit(-2);
+  }
+
+if(scalar(@outdirs) && !defined($outfile_suffix))
+  {
+    error("An outfile suffix (-o) is required if an output directory ",
+	  "(--outdir) is supplied.  Note, you may supply an empty string to ",
+	  "name the output files the same as the input files.");
+    quit(-8);
   }
 
 #If standard input has been redirected in
@@ -267,7 +278,7 @@ if(!isStandardInputFromTerminal())
 #Warn users when they turn on verbose and output is to the terminal
 #(implied by no outfile suffix checked above) that verbose messages may be
 #uncleanly overwritten
-if($verbose && !defined($outfile_suffix) &&isStandardOutputToTerminal())
+if($verbose && !defined($outfile_suffix) && isStandardOutputToTerminal())
   {warning('You have enabled --verbose, but appear to possibly be ',
 	   'outputting to the terminal.  Note that verbose messages can ',
 	   'interfere with formatting of terminal output making it ',
@@ -330,19 +341,21 @@ if(scalar(@outdirs))
 
 #Check to make sure previously generated output files won't be over-written
 #Note, this does not account for output redirected on the command line
-if(!$overwrite && defined($outfile_suffix))
+if(defined($outfile_suffix))
   {
     my $existing_outfiles = [];
-    my $set_num = 0;
+    my $unique_out_check  = {};
+    my $nonunique_found   = 0;
+    my $set_num           = 0;
     foreach my $input_file_set (@input_files)
       {
 	my $file_num = 0;
 	#For each output file *name* (this will contain the input file name's
 	#path if it was supplied)
-	foreach my $output_file (map {($_ eq '-' ? $outfile_stub : $_)
-					. $outfile_suffix}
-				 @$input_file_set)
+	foreach my $infile (@$input_file_set)
 	  {
+	    my $output_file = ($infile eq '-' ? $outfile_stub : $infile) .
+	      $outfile_suffix;
 	    #If at least 1 output directory was supplied
 	    if(scalar(@outdirs))
 	      {
@@ -428,15 +441,30 @@ if(!$overwrite && defined($outfile_suffix))
 
 	    $file_num++;
 	    push(@$existing_outfiles,$output_file) if(-e $output_file);
+	    if(exists($unique_out_check->{$output_file}))
+	      {$nonunique_found = 1}
+	    push(@{$unique_out_check->{$output_file}},$infile);
 	  }
 	$set_num++;
       }
 
-    if(scalar(@$existing_outfiles))
+    if(!$overwrite && scalar(@$existing_outfiles))
       {
 	error("Files exist: [@$existing_outfiles].  Use --overwrite to ",
 	      "continue.  E.g.:\n",getCommand(1),' --overwrite');
-	quit(-5);
+	quit(-5) unless($nonunique_found);
+      }
+
+    if($nonunique_found)
+      {
+	error('The following output file names overlap with the indicated ',
+	      'input file names and will be overwritten.  Please make sure ',
+	      'each similarly named input file outputs to a different output ',
+	      'directory.  Offending file name conflicts: [',
+	      join(',',map {"$_ is written to by [" .
+			      join(',',@{$unique_out_check->{$_}}) . "]"}
+		   (keys(%$unique_out_check))),"].");
+	quit(-9);
       }
   }
 
@@ -602,7 +630,7 @@ foreach my $input_file_set (@input_files)
 	      }
 	  }
 
-	if(defined($outfile_suffix) || scalar(@outdirs))
+	if(defined($outfile_suffix))
 	  {
 	    #Open the output file
 	    if(!open(OUTPUT,">$current_output_file"))
@@ -708,24 +736,9 @@ foreach my $input_file_set (@input_files)
 verbose("[STDOUT] Output done.") if(!defined($outfile_suffix));
 
 #Report the number of errors, warnings, and debugs on STDERR
-if(!$quiet && ($verbose                     ||
-	       $DEBUG                       ||
-	       defined($main::error_number) ||
-	       defined($main::warning_number)))
-  {
-    print STDERR ("\n",'Done.  EXIT STATUS: [',
-		  'ERRORS: ',
-		  ($main::error_number ? $main::error_number : 0),' ',
-		  'WARNINGS: ',
-		  ($main::warning_number ? $main::warning_number : 0),
-		  ($DEBUG ?
-		   ' DEBUGS: ' .
-		   ($main::debug_number ? $main::debug_number : 0) : ''),' ',
-		  'TIME: ',scalar(markTime(0)),"s]\n");
-
-    if($main::error_number || $main::warning_number)
-      {print STDERR ("Scroll up to inspect errors and warnings.\n")}
-  }
+printRunReport($verbose) if(!$quiet && ($verbose || $DEBUG ||
+					defined($main::error_number) ||
+					defined($main::warning_number)));
 
 ##
 ## End Main
@@ -813,26 +826,11 @@ rwleach\@ccr.buffalo.edu
 
                               -i 'a b c' --outdir '1' -i 'd e f' --outdir '2'
 
-                                 1/
-                                   a
-                                   b
-                                   c
-                                 2/
-                                   d
-                                   e
-                                   f
+                                 Result: 1/a,b,c  2/d,e,f
 
                               -i 'a b c' -i 'd e f' --outdir '1 2 3'
 
-                                 1/
-                                   a
-                                   d
-                                 2/
-                                   b
-                                   e
-                                 3/
-                                   c
-                                   f
+                                 Result: 1/a,d  2/b,e  3/c,f
 
                                  This is the default behavior if the number of
                                  sets and the number of files per set are all
@@ -841,12 +839,7 @@ rwleach\@ccr.buffalo.edu
 
                                     -i 'a b' -i 'd e' --outdir '1 2'
 
-                                       1/
-                                         a
-                                         d
-                                       2/
-                                         b
-                                         e
+                                       Result: 1/a,d  2/b,e
 
                                  NOT this: 1/a,b 2/d,e  To do this, you must
                                  supply the --outdir flag for each set, like
@@ -856,29 +849,11 @@ rwleach\@ccr.buffalo.edu
 
                               -i 'a b c' -i 'd e f' --outdir '1 2'
 
-                                 1/
-                                   a
-                                   b
-                                   c
-                                 2/
-                                   d
-                                   e
-                                   f
+                                 Result: 1/a,b,c  2/d,e,f
 
                               -i 'a b c' --outdir '1 2 3' -i 'd e f' --outdir '4 5 6'
 
-                                 1/
-                                   a
-                                 2/
-                                   b
-                                 3/
-                                   c
-                                 4/
-                                   d
-                                 5/
-                                   e
-                                 6/
-                                   f
+                                 Result: 1/a  2/b  3/c  4/d  5/e  6/f
 
 end_print
 
@@ -936,10 +911,13 @@ end_print
                                    with your suffix appended.  See --help for a
                                    description of the output file format.
      --outdir             OPTIONAL [input file location] Supply a directory to
-                                   put output files.  When supplied without -o,
-                                   the output file names will be the same as
-                                   the input file names.  See --help for
-                                   advanced usage.
+                                   put output files.  Note, if there are input
+                                   files from multiple directories going into
+                                   one output directory, they must not have the
+                                   same file name or they will be over-written.
+                                   This option requires an outfile suffix be
+                                   supplied (though an empty string is
+                                   allowed).  See --help for advanced usage.
      --force|--overwrite  OPTIONAL Force overwrite of existing output files.
                                    Only used when the -o option is supplied.
      --ignore             OPTIONAL Ignore critical errors & continue
@@ -969,6 +947,10 @@ end_print
                                    and command-line information will be printed
                                    at the top of all output files commented
                                    with '#' characters.
+     --error-type-limit   OPTIONAL [50] Limit errors and warnings to this
+                                   number of each error/warning type.  A value
+                                   of 0 means there is no limit.  Use --quiet
+                                   to suppress all errors and warnings.
 
 end_print
       }
@@ -1113,6 +1095,9 @@ sub verboseOverMe
 ## trace route back to main to see where all the subroutine calls were from,
 ## the line number of each call, an error number, and the name of the script
 ## which generated the error (in case scripts are called via a system call).
+## Globals used defined in main: error_limit, quiet, verbose
+## Globals used defined in here: error_hash, error_number
+## Globals used defined in subs: last_verbose_state, last_verbose_size
 ##
 sub error
   {
@@ -1129,49 +1114,82 @@ sub error
 
     #Assign the values from the calling subroutines/main
     my(@caller_info,$line_num,$caller_string,$stack_level,$script);
-    if($DEBUG)
+
+    #Build a trace-back string.  This will be used for tracking the number of
+    #each type of error as well as embedding into the error message in debug
+    #mode.
+    $script = $0;
+    $script =~ s/^.*\/([^\/]+)$/$1/;
+    @caller_info = caller(0);
+    $line_num = $caller_info[2];
+    $caller_string = '';
+    $stack_level = 1;
+    while(@caller_info = caller($stack_level))
       {
-	$script = $0;
-	$script =~ s/^.*\/([^\/]+)$/$1/;
-	@caller_info = caller(0);
+	my $calling_sub = $caller_info[3];
+	$calling_sub =~ s/^.*?::(.+)$/$1/ if(defined($calling_sub));
+	$calling_sub = (defined($calling_sub) ? $calling_sub : 'MAIN');
+	$caller_string .= "$calling_sub(LINE$line_num):"
+	  if(defined($line_num));
 	$line_num = $caller_info[2];
-	$caller_string = '';
-	$stack_level = 1;
-	while(@caller_info = caller($stack_level))
-	  {
-	    my $calling_sub = $caller_info[3];
-	    $calling_sub =~ s/^.*?::(.+)$/$1/ if(defined($calling_sub));
-	    $calling_sub = (defined($calling_sub) ? $calling_sub : 'MAIN');
-	    $caller_string .= "$calling_sub(LINE$line_num):"
-	      if(defined($line_num));
-	    $line_num = $caller_info[2];
-	    $stack_level++;
-	  }
-	$caller_string .= "MAIN(LINE$line_num):";
-	$leader_string .= "$script:$caller_string";
+	$stack_level++;
       }
+    $caller_string .= "MAIN(LINE$line_num):";
+
+    if($DEBUG)
+      {$leader_string .= "$script:$caller_string"}
 
     $leader_string .= ' ';
+    my $leader_length = length($leader_string);
 
     #Figure out the length of the first line of the error
     my $error_length = length(($error_message[0] =~ /\S/ ?
 			       $leader_string : '') .
 			      $error_message[0]);
 
-    #Put location information at the beginning of the first line of the message
-    #and indent each subsequent line by the length of the leader string
-    print STDERR ($leader_string,
-		  shift(@error_message),
-		  ($verbose &&
-		   defined($main::last_verbose_state) &&
-		   $main::last_verbose_state ?
-		   ' ' x ($main::last_verbose_size - $error_length) : ''),
-		  "\n");
-    my $leader_length = length($leader_string);
+    #Clean up any previous verboseOverMe output that may be longer than the
+    #first line of the error message, put leader string at the beginning of
+    #each line of the message, and indent each subsequent line by the length
+    #of the leader string
+    my $error_string = $leader_string . shift(@error_message) .
+      ($verbose && defined($main::last_verbose_state) &&
+       $main::last_verbose_state ?
+       ' ' x ($main::last_verbose_size - $error_length) : '') . "\n";
     foreach my $line (@error_message)
-      {print STDERR (' ' x $leader_length,
-		     $line,
-		     "\n")}
+      {$error_string .= (' ' x $leader_length) . $line . "\n"}
+
+    #If the global error hash does not yet exist, store the first example of
+    #this error type
+    if(!defined($main::error_hash) ||
+       !exists($main::error_hash->{$caller_string}))
+      {
+	$main::error_hash->{$caller_string}->{EXAMPLE}    = $error_string;
+	$main::error_hash->{$caller_string}->{EXAMPLENUM} =
+	  $main::error_number;
+
+	$main::error_hash->{$caller_string}->{EXAMPLE} =~ s/\n */ /g;
+	$main::error_hash->{$caller_string}->{EXAMPLE} =~ s/ $//g;
+	$main::error_hash->{$caller_string}->{EXAMPLE} =~ s/^(.{100}).+/$1.../;
+      }
+
+    #Increment the count for this error type
+    $main::error_hash->{$caller_string}->{NUM}++;
+
+    #Print the error unless it is over the limit for its type
+    if($error_limit == 0 ||
+       $main::error_hash->{$caller_string}->{NUM} <= $error_limit)
+      {
+	print STDERR ($error_string);
+
+	#Let the user know if we're going to start suppressing errors of this
+	#type
+	if($error_limit &&
+	   $main::error_hash->{$caller_string}->{NUM} == $error_limit)
+	  {print STDERR ($leader_string,"NOTE: Further errors of this type ",
+			 "will be suppressed.\n$leader_string",
+			 "Set --error-type-limit to 0 to turn off error ",
+			 "suppression\n")}
+      }
 
     #Reset the verbose states if verbose is true
     if($verbose)
@@ -1189,6 +1207,10 @@ sub error
 ## Subroutine that prints warnings with a leader string containing a warning
 ## number
 ##
+## Globals used defined in main: error_limit, quiet, verbose
+## Globals used defined in here: warning_hash, warning_number
+## Globals used defined in subs: last_verbose_state, last_verbose_size
+##
 sub warning
   {
     return(0) if($quiet);
@@ -1205,49 +1227,85 @@ sub warning
 
     #Assign the values from the calling subroutines/main
     my(@caller_info,$line_num,$caller_string,$stack_level,$script);
-    if($DEBUG)
-      {
-	$script = $0;
-	$script =~ s/^.*\/([^\/]+)$/$1/;
-	@caller_info = caller(0);
-	$line_num = $caller_info[2];
-	$caller_string = '';
-	$stack_level = 1;
-	while(@caller_info = caller($stack_level))
-	  {
-	    my $calling_sub = $caller_info[3];
-	    $calling_sub =~ s/^.*?::(.+)$/$1/ if(defined($calling_sub));
-	    $calling_sub = (defined($calling_sub) ? $calling_sub : 'MAIN');
-	    $caller_string .= "$calling_sub(LINE$line_num):"
-	      if(defined($line_num));
-	    $line_num = $caller_info[2];
-	    $stack_level++;
-	  }
-	$caller_string .= "MAIN(LINE$line_num):";
-	$leader_string .= "$script:$caller_string";
-      }
 
-    $leader_string .= ' ';
+    #Build a trace-back string.  This will be used for tracking the number of
+    #each type of warning as well as embedding into the warning message in
+    #debug mode.
+    $script = $0;
+    $script =~ s/^.*\/([^\/]+)$/$1/;
+    @caller_info = caller(0);
+    $line_num = $caller_info[2];
+    $caller_string = '';
+    $stack_level = 1;
+    while(@caller_info = caller($stack_level))
+      {
+	my $calling_sub = $caller_info[3];
+	$calling_sub =~ s/^.*?::(.+)$/$1/ if(defined($calling_sub));
+	$calling_sub = (defined($calling_sub) ? $calling_sub : 'MAIN');
+	$caller_string .= "$calling_sub(LINE$line_num):"
+	  if(defined($line_num));
+	$line_num = $caller_info[2];
+	$stack_level++;
+      }
+    $caller_string .= "MAIN(LINE$line_num):";
+
+    if($DEBUG)
+      {$leader_string .= "$script:$caller_string"}
+
+    $leader_string   .= ' ';
+    my $leader_length = length($leader_string);
 
     #Figure out the length of the first line of the error
     my $warning_length = length(($warning_message[0] =~ /\S/ ?
 				 $leader_string : '') .
 				$warning_message[0]);
 
-    #Put leader string at the beginning of each line of the message
-    #and indent each subsequent line by the length of the leader string
-    print STDERR ($leader_string,
-		  shift(@warning_message),
-		  ($verbose &&
-		   defined($main::last_verbose_state) &&
-		   $main::last_verbose_state ?
-		   ' ' x ($main::last_verbose_size - $warning_length) : ''),
-		  "\n");
-    my $leader_length = length($leader_string);
+    #Clean up any previous verboseOverMe output that may be longer than the
+    #first line of the warning message, put leader string at the beginning of
+    #each line of the message and indent each subsequent line by the length
+    #of the leader string
+    my $warning_string =
+      $leader_string . shift(@warning_message) .
+	($verbose && defined($main::last_verbose_state) &&
+	 $main::last_verbose_state ?
+	 ' ' x ($main::last_verbose_size - $warning_length) : '') .
+	   "\n";
     foreach my $line (@warning_message)
-      {print STDERR (' ' x $leader_length,
-		     $line,
-		     "\n")}
+      {$warning_string .= (' ' x $leader_length) . $line . "\n"}
+
+    #If the global warning hash does not yet exist, store the first example of
+    #this warning type
+    if(!defined($main::warning_hash) ||
+       !exists($main::warning_hash->{$caller_string}))
+      {
+	$main::warning_hash->{$caller_string}->{EXAMPLE}    = $warning_string;
+	$main::warning_hash->{$caller_string}->{EXAMPLENUM} =
+	  $main::warning_number;
+
+	$main::warning_hash->{$caller_string}->{EXAMPLE} =~ s/\n */ /g;
+	$main::warning_hash->{$caller_string}->{EXAMPLE} =~ s/ $//g;
+	$main::warning_hash->{$caller_string}->{EXAMPLE} =~
+	  s/^(.{100}).+/$1.../;
+      }
+
+    #Increment the count for this warning type
+    $main::warning_hash->{$caller_string}->{NUM}++;
+
+    #Print the warning unless it is over the limit for its type
+    if($error_limit == 0 ||
+       $main::warning_hash->{$caller_string}->{NUM} <= $error_limit)
+      {
+	print STDERR ($warning_string);
+
+	#Let the user know if we're going to start suppressing warnings of this
+	#type
+	if($error_limit &&
+	   $main::warning_hash->{$caller_string}->{NUM} == $error_limit)
+	  {print STDERR ($leader_string,"NOTE: Further warnings of this ",
+			 "type will be suppressed.\n$leader_string",
+			 "Set --error-type-limit to 0 to turn off error ",
+			 "suppression\n")}
+      }
 
     #Reset the verbose states if verbose is true
     if($verbose)
@@ -1535,7 +1593,7 @@ sub sglob
 sub getVersion
   {
     my $full_version_flag = $_[0];
-    my $template_version_number = '1.43';
+    my $template_version_number = '1.44';
     my $version_message = '';
 
     #$software_version_number  - global
@@ -1582,11 +1640,12 @@ sub isStandardOutputToTerminal
   {return(-t STDOUT && select() eq 'main::STDOUT')}
 
 #This subroutine exits the current process.  Note, you must clean up after
-#yourself before calling this.  Does not exit is $ignore_errors is true.  Takes
+#yourself before calling this.  Does not exit if $ignore_errors is true.  Takes
 #the error number to supply to exit().
 sub quit
   {
     my $errno = $_[0];
+
     if(!defined($errno))
       {$errno = -1}
     elsif($errno !~ /^[+\-]?\d+$/)
@@ -1599,5 +1658,66 @@ sub quit
 
     debug("Exit status: [$errno].");
 
+    #Exit if we are not ignoring errors or if there were no errors at all
     exit($errno) if(!$ignore_errors || $errno == 0);
+  }
+
+sub printRunReport
+  {
+    my $extended = $_[0];
+
+    return(0) if($quiet);
+
+    #Report the number of errors, warnings, and debugs on STDERR
+    print STDERR ("\n",'Done.  EXIT STATUS: [',
+		  'ERRORS: ',
+		  ($main::error_number ? $main::error_number : 0),' ',
+		  'WARNINGS: ',
+		  ($main::warning_number ? $main::warning_number : 0),
+		  ($DEBUG ?
+		   ' DEBUGS: ' .
+		   ($main::debug_number ? $main::debug_number : 0) : ''),' ',
+		  'TIME: ',scalar(markTime(0)),"s]");
+
+    #If the user wants the extended report
+    if($extended)
+      {
+	if($main::error_number || $main::warning_number)
+	  {print STDERR " SUMMARY:\n"}
+
+	#If there were errors
+	if($main::error_number)
+	  {
+	    foreach my $err_type
+	      (sort {$main::error_hash->{$a}->{EXAMPLENUM} <=>
+		       $main::error_hash->{$b}->{EXAMPLENUM}}
+	       keys(%$main::error_hash))
+	      {print STDERR ("\t",$main::error_hash->{$err_type}->{NUM},
+			     " ERROR",
+			     ($main::error_hash->{$err_type}->{NUM} > 1 ?
+			      'S' : '')," LIKE: [",
+			     $main::error_hash->{$err_type}->{EXAMPLE},"]\n")}
+	  }
+
+	#If there were warnings
+	if($main::warning_number)
+	  {
+	    foreach my $warn_type
+	      (sort {$main::warning_hash->{$a}->{EXAMPLENUM} <=>
+		       $main::warning_hash->{$b}->{EXAMPLENUM}}
+	       keys(%$main::warning_hash))
+	      {print STDERR ("\t",$main::warning_hash->{$warn_type}->{NUM},
+			     " WARNING",
+			     ($main::warning_hash->{$warn_type}->{NUM} > 1 ?
+			      'S' : '')," LIKE: [",
+			     $main::warning_hash->{$warn_type}->{EXAMPLE},
+			     "]\n")}
+	  }
+      }
+    else
+      {print STDERR "\n"}
+
+    if($main::error_number || $main::warning_number)
+      {print STDERR ("\tScroll up to inspect full errors/warnings ",
+		     "in-place.\n")}
   }

@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-#Generated using perl_script_template.pl 1.44
+#Generated using perl_script_template.pl 1.45
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
@@ -1562,8 +1562,8 @@ sub getCommand
 ## programs which accept individual files as opposed to sets of files.  If the
 ## user wants to enter multiple files, it is assumed that space delimiting will
 ## prompt the user to realize they need to escape the spaces in the file names.
-## Note, this will not work on sets of files containing a mix of spaces and
-## glob characters.
+## This version works with a mix of unescaped and escaped spaces, as well as
+## glob characters.  It will also split non-files on unescaped spaces as well.
 ##
 sub sglob
   {
@@ -1573,27 +1573,14 @@ sub sglob
 	warning("Undefined command line string encountered.");
 	return($command_line_string);
       }
-    return(#If matches unescaped spaces
-	   $command_line_string =~ /(?!\\)\s+/ &&
-	   #And all separated args are files
-	   scalar(@{[bsd_glob($command_line_string)]}) ==
-	   scalar(@{[grep {-e $_} bsd_glob($command_line_string)]}) ?
-	   #Return the glob array
-	   bsd_glob($command_line_string) :
-	   #If it's a series of all files with escaped spaces
-	   (scalar(@{[split(/(?!\\)\s/,$command_line_string)]}) ==
-	    scalar(@{[grep {-e $_} split(/(?!\\)\s+/,$command_line_string)]}) ?
-	    split(/(?!\\)\s+/,$command_line_string) :
-	    #Return the single arg
-	    ($command_line_string =~ /\*|\?|\[/ ?
-	     bsd_glob($command_line_string) : $command_line_string)));
+    return(map {bsd_glob($_)} split(/(?<!\\)\s+/,$command_line_string));
   }
 
 
 sub getVersion
   {
     my $full_version_flag = $_[0];
-    my $template_version_number = '1.44';
+    my $template_version_number = '1.45';
     my $version_message = '';
 
     #$software_version_number  - global
@@ -1684,6 +1671,8 @@ sub printRunReport
       {
 	if($main::error_number || $main::warning_number)
 	  {print STDERR " SUMMARY:\n"}
+	else
+	  {print STDERR "\n"}
 
 	#If there were errors
 	if($main::error_number)

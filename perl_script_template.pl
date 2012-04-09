@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-#Generated using perl_script_template.pl 2.0
+#Generated using perl_script_template.pl 2.1
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
@@ -161,13 +161,17 @@ my $created_on_date         = 'DATE HERE';
 ##     verbose and error subroutines.
 ##   copyArray
 ##     recursively copies a multi-dimensional array of scalars.
+##   getUserDefaults
+##     Retrieves default command line parameters the user previously saved
+##   saveUserDefaults
+##     Saves any command line parameters in a defaults file
 
 ##
 ## Start Main
 ##
 
 use strict;
-use Getopt::Long;
+use Getopt::Long qw(GetOptionsFromArray);
 use File::Glob ':glob';
 
 #Declare & initialize variables.  Provide default values here.
@@ -179,9 +183,11 @@ my $help                = 0;
 my $version             = 0;
 my $overwrite           = 0;
 my $skip_existing       = 0;
-my $noheader            = 0;
+my $header              = 1;
 my $error_limit         = 50;
 my $dry_run             = 0;
+my $use_as_default      = 0;
+my $defaults_dir        = (sglob('~/.rpst'))[0];
 
 #These variables (in main) are used by the following subroutines:
 #verbose, error, warning, debug, getCommand, quit, and usage
@@ -190,6 +196,7 @@ my $verbose       = 0;
 my $quiet         = 0;
 my $DEBUG         = 0;
 my $ignore_errors = 0;
+my @user_defaults = getUserDefaults();
 
 my $GetOptHash =
   {#ENTER YOUR COMMAND LINE PARAMETERS HERE AS BELOW
@@ -209,10 +216,26 @@ my $GetOptHash =
    'debug:+'            => \$DEBUG,                    #OPTIONAL [Off]
    'help'               => \$help,                     #OPTIONAL [Off]
    'version'            => \$version,                  #OPTIONAL [Off]
-   'noheader|no-header' => \$noheader,                 #OPTIONAL [Off]
+   'header!'            => \$header,                   #OPTIONAL [On]
    'error-type-limit=s' => \$error_limit,              #OPTIONAL [0]
    'dry-run!'           => \$dry_run,                  #OPTIONAL [Off]
+   'use-as-default!'    => \$use_as_default,           #OPTIONAL [Off]
   };
+
+#If the user has previously stored any defaults
+if(scalar(@user_defaults))
+  {
+    #Save the defaults, because GetOptionsFromArray alters the array
+    my @tmp_user_defaults = @user_defaults;
+
+    #Get any default values the user stored, set the default values before
+    #calling GetOptions using the real @ARGV array and before calling usage so
+    #that the user-defined default values will show in the usage output
+    GetOptionsFromArray(\@user_defaults,%$GetOptHash);
+
+    #Reset the user defaults array for later use
+    @user_defaults = @tmp_user_defaults;
+  }
 
 #If there are no arguments and no files directed or piped in
 if(scalar(@ARGV) == 0 && isStandardInputFromTerminal())
@@ -232,6 +255,27 @@ unless(GetOptions(%$GetOptHash))
 	  'correct the offending argument(s) and try again.');
     usage(1);
     quit(-1);
+  }
+
+if(scalar(grep {$_} ($use_as_default,$help,$version)) > 1)
+  {
+    error("Options [",join(',',grep {$_} ($use_as_default,$help,$version)),
+	  "] are mutually exclusive.");
+    quit(-20);
+  }
+
+#If the user specified that they would like to use the current options as
+#default values, store them
+if($use_as_default)
+  {
+    if(saveUserDefaults($preserve_args))
+      {
+	print("Old user defaults: [",join(' ',@user_defaults),"].\n",
+	      "New user defaults: [",join(' ',getUserDefaults()),"].\n");
+	quit(0);
+      }
+    else
+      {quit(-19)}
   }
 
 print STDERR ("Starting dry run.\n") if($dry_run);
@@ -357,7 +401,7 @@ verbose('[STDOUT] Opened for all output.') if(!defined($outfile_suffix));
 
 #Store info. about the run as a comment at the top of the output file if
 #STDOUT has been redirected to a file
-if(!isStandardOutputToTerminal() && !$noheader)
+if(!isStandardOutputToTerminal() && $header)
   {print(getVersion(),"\n",
 	 '#',scalar(localtime($^T)),"\n",
 	 '#',getCommand(1),"\n");}
@@ -1068,7 +1112,14 @@ sub getCommand
     #Build the original command
     $command .= join(' ',($0,@$arguments));
 
-    #Note, this sub doesn't add any redirected files in or out
+    #Add any default flags that were previously saved
+    my @default_options = getUserDefaults();
+    if(scalar(@default_options))
+      {
+	$command .= ' [USER DEFAULTS ADDED: ';
+	$command .= join(' ',@default_options);
+	$command .= ']';
+      }
 
     return($command);
   }
@@ -1103,7 +1154,7 @@ sub sglob
 sub getVersion
   {
     my $full_version_flag = $_[0];
-    my $template_version_number = '2.0';
+    my $template_version_number = '2.1';
     my $version_message = '';
 
     #$software_version_number  - global
@@ -1866,12 +1917,12 @@ sub getExistingOutfiles
   }
 
 #This subroutine takes a 1D or 2D array of output directories and creates them
-#(Only works on the last directory in a path.)
+#(Only works on the last directory in a path.)  Returns non-zero if suffessful
 #Globals used: $overwrite,$dry_run
 sub mkdirs
   {
     my @dirs       = @_;
-    my $status     = 0;
+    my $status     = 1;
     my @unwritable = ();
 
     #Create the output directories
@@ -1885,15 +1936,15 @@ sub mkdirs
 		  {
 		    if(-e $dir)
 		      {
-			if(!(-w $dir))
+			if(!$use_as_default && !(-w $dir))
 			  {push(@unwritable,$dir)}
-			elsif($overwrite)
+			elsif(!$use_as_default && $overwrite)
 			  {warning('The --overwrite flag will not empty or ',
 				   'delete existing output directories.  If ',
 				   'you wish to delete existing output ',
 				   'directories, you must do it manually.')}
 		      }
-		    elsif(!$dry_run)
+		    elsif($use_as_default || !$dry_run)
 		      {
 			my $tmp_status = mkdir($dir);
 			$status = $tmp_status if($tmp_status);
@@ -1916,8 +1967,36 @@ sub mkdirs
 	      }
 	    else
 	      {
-		my $tmp_status = mkdir($dir_set);
-		$status = $tmp_status if($tmp_status);
+		my $dir = $dir_set;
+		if(-e $dir)
+		  {
+		    if(!$use_as_default && !(-w $dir))
+		      {push(@unwritable,$dir)}
+		    elsif(!$use_as_default && $overwrite)
+		      {warning('The --overwrite flag will not empty or ',
+			       'delete existing output directories.  If ',
+			       'you wish to delete existing output ',
+			       'directories, you must do it manually.')}
+		  }
+		elsif($use_as_default || !$dry_run)
+		  {
+		    my $tmp_status = mkdir($dir);
+		    $status = $tmp_status if($tmp_status);
+		  }
+		else
+		  {
+		    my $encompassing_dir = $dir;
+		    $encompassing_dir =~ s%/$%%;
+		    $encompassing_dir =~ s/[^\/]+$//;
+		    $encompassing_dir = '.'
+		      unless($encompassing_dir =~ /./);
+
+		    if(!(-w $encompassing_dir))
+		      {error("Unable to create directory: [$dir].  ",
+			     "Encompassing directory is not writable.")}
+		    else
+		      {verbose("[$dir] Directory created.")}
+		  }
 	      }
 	  }
 
@@ -1926,7 +2005,7 @@ sub mkdirs
 	    error("These output directories do not have write permission: [",
 		  join(',',@unwritable),
 		  "].  Please change the permissions to proceed.");
-	    quit(-17);
+	    quit(-17) unless($use_as_default);
 	  }
       }
 
@@ -1969,7 +2048,7 @@ sub checkFile
     return($status);
   }
 
-#Uses globals: $noheader,$main::open_handles,$dry_run
+#Uses globals: $header,$main::open_handles,$dry_run
 sub openOut
   {
     my $file_handle         = $_[0];
@@ -2016,7 +2095,7 @@ sub openOut
 	#Store info about the run as a comment at the top of the output
 	print(getVersion(),"\n",
 	      '#',scalar(localtime($^T)),"\n",
-	      '#',getCommand(1),"\n") unless($noheader);
+	      '#',getCommand(1),"\n") if($header);
       }
 
     return($status);
@@ -2096,6 +2175,61 @@ sub copyArray
       {push(@copy,(ref($elem) eq 'ARRAY' ? [copyArray(@$elem)] : $elem))}
     debug("Returning array copy of [@copy].") if($DEBUG > 99);
     return(wantarray ? @copy : (scalar(@copy) > 1 ? [@copy] : $copy[0]));
+  }
+
+#Globals used: $defaults_dir
+sub getUserDefaults
+  {
+    my $script        = $0;
+    $script           =~ s/^.*\/([^\/]+)$/$1/;
+    my $defaults_file = $defaults_dir . "/$script";
+    my $return_array  = [];
+
+    if(open(DFLTS,$defaults_file))
+      {
+	@$return_array = map {chomp;$_} <DFLTS>;
+	close(DFLTS);
+      }
+    elsif(-e $defaults_file)
+      {error("Unable to open user defaults file: [$defaults_file].  $!")}
+
+    debug("Returning array: [@$return_array].");
+
+    return(wantarray ? @$return_array : $return_array);
+  }
+
+#Globals used: $defaults_dir
+sub saveUserDefaults
+  {
+    my $argv          = $_[0];
+    my $script        = $0;
+    $script           =~ s/^.*\/([^\/]+)$/$1/;
+    my $defaults_file = $defaults_dir . "/$script";
+    my $status        = 1;
+
+    my $save_argv = [grep {$_ ne '--use-as-default'} @$argv];
+
+    #If the defaults directory does not exist and mkdirs returns an error
+    if(!(-e $defaults_dir) && !mkdirs($defaults_dir))
+      {
+	error("Unable to create defaults directory: [$defaults_dir].  $!");
+	$status = 0;
+      }
+    else
+      {
+	if(open(DFLTS,">$defaults_file"))
+	  {
+	    print DFLTS (join("\n",@$save_argv));
+	    close(DFLTS);
+	  }
+	else
+	  {
+	    error("Unable to write to defaults file: [$defaults_file].  $!");
+	    $status = 0;
+	  }
+      }
+
+    return($status);
   }
 
 ##
@@ -2214,7 +2348,6 @@ sub usage
     else
       {
         print << 'end_print';
-     --help               OPTIONAL Print info and input/output descriptions.
      -i|--input-file*     REQUIRED Space-separated input file(s).  Expands glob
                                    characters ('*', '?', etc.).  When standard
                                    input detected, used as a file name stub
@@ -2227,27 +2360,26 @@ sub usage
                                    (unless a stub is provided via -i).  See
                                    --help for file format and advanced usage.
      --outdir             OPTIONAL [none] Directory to put output files.  This
-                                   option requires -o (though an empty string
-                                   is allowed).  See --help for advanced usage.
-     --verbose            OPTIONAL Verbose mode.  Can supply multiple times or
-                                   give a number (--verbose 2) to set level.
-     --quiet              OPTIONAL Quiet mode.  Suppresses warnings and errors.
-     --skip-existing      OPTIONAL Skip input files for which a corresponding
-                                   output file exists.  Also see --overwrite.
-     --overwrite          OPTIONAL Force overwrite of existing output files.
-                                   Also see --skip-existing.
+                                   option requires -o.  Also see --help.
+     --verbose            OPTIONAL Verbose mode/level.  (e.g. --verbose 2)
+     --quiet              OPTIONAL Quiet mode.
+     --skip-existing      OPTIONAL Skip existing output files.
+     --overwrite          OPTIONAL Overwrite existing output files.
      --ignore             OPTIONAL Ignore critical errors.  Also see
                                    --overwrite or --skip-existing.
-     --noheader           OPTIONAL Suppress commented header output.
-     --debug              OPTIONAL Debug mode.  Can be supplied multiple times
-                                   or given a number (--debug 2) to set level.
+     --noheader           OPTIONAL Do not print commented script version, date,
+                                   and command line call to each outfile.
+     --debug              OPTIONAL Debug mode/level.  (e.g. --debug --debug)
      --error-type-limit   OPTIONAL [50] Limit for each type of error/warning.
                                    0 = no limit.  Also see --quiet.
-     --dry-run            OPTIONAL [Off] Run the script without generating any
-                                   output files to see potential file errors.
-     --version            OPTIONAL Print version info.  Prints the template
-                                   version to standard error in verbose mode.
+     --dry-run            OPTIONAL Run without generating output files.
+     --version            OPTIONAL Print version info.
+     --use-as-default     OPTIONAL Save the command line arguments.
+     --help               OPTIONAL Print info and input/output descriptions.
 end_print
+
+	my @user_defaults = getUserDefaults();
+	print("Current user defaults: [@user_defaults].\n");
       }
 
     return(0);

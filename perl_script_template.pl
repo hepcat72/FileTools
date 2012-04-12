@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-#Generated using perl_script_template.pl 2.1
+#Generated using perl_script_template.pl 2.2
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
@@ -1154,7 +1154,7 @@ sub sglob
 sub getVersion
   {
     my $full_version_flag = $_[0];
-    my $template_version_number = '2.1';
+    my $template_version_number = '2.2';
     my $version_message = '';
 
     #$software_version_number  - global
@@ -1608,6 +1608,7 @@ sub getFileSets
     #dimensions (and fill in the 1D arrays to match)
     my $row_inconsistencies = 0;
     my $col_inconsistencies = 0;
+    my $twod_col_inconsistencies = 0;
     my @dimensionalities    = (); #Keep track for checking outfile stubs later
     foreach my $file_type_array (@$file_types_array)
       {
@@ -1632,6 +1633,7 @@ sub getFileSets
 		debug("Col inconsistencies in 2D arrays found")
 		  if($DEBUG > 99);
 		$col_inconsistencies++;
+		$twod_col_inconsistencies++;
 	      }
 	  }
 	else #It's a 1D array (i.e. just 1 col or row)
@@ -1722,24 +1724,48 @@ sub getFileSets
 		    debug("Pushing onto a 1D array with 1 col and multiple ",
 			  "rows")
 		      if($DEBUG > 99);
+		    my $row_index = 0;
 		    foreach my $row_array (@$file_type_array)
 		      {
+
+			my $this_max_cols = $max_num_cols;
+			#If the number of rows is correct and there's only 1
+			#2D array
+			if($num_rows == $max_num_rows && $twods_exist == 1)
+			  {
+			    #Match that one 2D array's number of columns
+			    my $two_d_array =
+			      (grep {my @x = @$_;
+				     scalar(@x) > 1 &&
+				       scalar(grep {scalar(@$_) > 1} @x)}
+			       @$file_types_array)[0];
+			    $this_max_cols =
+			      scalar(@{$two_d_array->[$row_index]});
+			  }
+
 			debug("Processing from $num_cols..($max_num_cols - 1)")
 			  if($DEBUG > 99);
-			foreach($num_cols..($max_num_cols - 1))
+			foreach($num_cols..($this_max_cols - 1))
 			  {
 			    debug("Pushing [$row_array->[0]] on")
 			      if($DEBUG > 99);
 			    push(@$row_array,$row_array->[0]);
 			  }
+
+			$row_index++;
 		      }
 		  }
 #	      }
 	  }
       }
 
-    if($row_inconsistencies || $col_inconsistencies)
+    if(($twods_exist < 2 &&
+	($row_inconsistencies || $twod_col_inconsistencies > 1 ||
+	 $twod_col_inconsistencies != $col_inconsistencies)) ||
+       ($twods_exist > 1 &&
+	($row_inconsistencies || $col_inconsistencies)))
       {
+	debug("Row inconsistencies: $row_inconsistencies Col inconsistencies: $col_inconsistencies");
 	error("The number of ",
 	      ($row_inconsistencies ? "sets of files" .
 	       (defined($outdir_array) && scalar($outdir_array) ?
@@ -1790,7 +1816,7 @@ sub getFileSets
     #associated with one another
     foreach my $row_index (0..($max_num_rows - 1))
       {
-	foreach my $col_index (0..($max_num_cols - 1))
+	foreach my $col_index (0..$#{$file_types_array->[-1]->[$row_index]})
 	  {
 	    debug("Creating new set.") if($DEBUG > 99);
 	    push(@$infile_sets_array,[]);

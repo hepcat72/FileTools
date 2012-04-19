@@ -1,4 +1,5 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
+#Note: 'use warnings' is below instead of having -w above
 
 #Generated using perl_script_template.pl 2.2
 #Robert W. Leach
@@ -170,9 +171,13 @@ my $created_on_date         = 'DATE HERE';
 ## Start Main
 ##
 
+use warnings; #Same as using the -w, only just for code in this script
 use strict;
 use Getopt::Long qw(GetOptionsFromArray);
 use File::Glob ':glob';
+
+#This will allow us to track runtime warnings about undefined variables, etc.
+local $SIG{__WARN__} = sub {chomp($_[0]);warning("Runtime warning: [$_[0]].")};
 
 #Declare & initialize variables.  Provide default values here.
 my($outfile_suffix); #Not defined so input can be overwritten

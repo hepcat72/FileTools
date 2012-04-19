@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 #Note: 'use warnings' is below instead of having -w above
 
-#Generated using perl_script_template.pl 2.2
+#Generated using perl_script_template.pl 2.3
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
@@ -1159,7 +1159,7 @@ sub sglob
 sub getVersion
   {
     my $full_version_flag = $_[0];
-    my $template_version_number = '2.2';
+    my $template_version_number = '2.3';
     my $version_message = '';
 
     #$software_version_number  - global

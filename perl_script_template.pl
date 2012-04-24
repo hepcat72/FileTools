@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 #Note: 'use warnings' is below instead of having -w above
 
-#Generated using perl_script_template.pl 2.3
+#Generated using perl_script_template.pl 2.4
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
@@ -1151,7 +1151,7 @@ sub sglob
     #Note, when bsd_glob gets a string with a glob character it can't expand,
     #it drops the string entirely.  Those strings are returned with the glob
     #characters so the surrounding script can report an error.
-    return(map {my @x = bsd_glob($_);scalar(@x) ? @x : $_}
+    return(sort {$a cmp $b} map {my @x = bsd_glob($_);scalar(@x) ? @x : $_}
 	   split(/(?<!\\)\s+/,$command_line_string));
   }
 
@@ -1159,7 +1159,7 @@ sub sglob
 sub getVersion
   {
     my $full_version_flag = $_[0];
-    my $template_version_number = '2.3';
+    my $template_version_number = '2.4';
     my $version_message = '';
 
     #$software_version_number  - global

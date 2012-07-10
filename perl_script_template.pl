@@ -177,7 +177,8 @@ use Getopt::Long qw(GetOptionsFromArray);
 use File::Glob ':glob';
 
 #This will allow us to track runtime warnings about undefined variables, etc.
-local $SIG{__WARN__} = sub {chomp($_[0]);warning("Runtime warning: [$_[0]].")};
+local $SIG{__WARN__} = sub {my $err = $_[0];chomp($err);
+			    warning("Runtime warning: [$err].")};
 
 #Declare & initialize variables.  Provide default values here.
 my($outfile_suffix); #Not defined so input can be overwritten
@@ -1369,6 +1370,12 @@ sub getFileSets
       }
     if(scalar(@_) > 1)
       {
+	debug("Assuming the last input array is NOT outdirs.  Outfile suffix ",
+	      "is ",(defined($outfile_suffix) ? '' : 'NOT '),"defined, last ",
+	      "array submitted is ",(defined($_[-1]) ? '' : 'NOT '),
+	      "defined, and the last array sumitted is size ",
+	      (defined($_[-1]) ? scalar(@{$_[-1]}) : 'undef'),".")
+	  if($DEBUG > 1);
 	debug("Copy Call 2") if($DEBUG > 99);
 	$file_types_array = [copyArray(grep {scalar(@$_)} @_)];
       }
@@ -1508,7 +1515,9 @@ sub getFileSets
       }
 
     debug("OUTDIR ARRAY DEFINED?: [",defined($outdir_array),"] SIZE: [",
-	  scalar(@$outdir_array),"].") if($DEBUG > 99);
+	  (defined($outdir_array) ? scalar(@$outdir_array) : '0'),"].")
+      if($DEBUG > 99);
+
 
     #If output directories were supplied, error check them
     if(defined($outdir_array) && scalar(@$outdir_array))

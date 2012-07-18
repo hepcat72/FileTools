@@ -7,7 +7,7 @@
 #Copyright 2008
 
 #These variables (in main) are used by getVersion() and usage()
-my $software_version_number = '1.0';
+my $software_version_number = '1.1';
 my $created_on_date         = '7/11/2011';
 
 ##
@@ -37,9 +37,7 @@ my $DEBUG         = 0;
 my $ignore_errors = 0;
 
 my $GetOptHash =
-  {# ENTER YOUR COMMAND LINE PARAMETERS HERE AS BELOW
-
-   'i|input-file=s'     => sub {push(@input_files,     #REQUIRED unless <> is
+  {'i|input-file=s'     => sub {push(@input_files,     #REQUIRED unless <> is
 				     [sglob($_[1])])}, #         supplied
    '<>'                 => sub {push(@input_files,     #REQUIRED unless -i is
 				     [sglob($_[0])])}, #         supplied
@@ -506,8 +504,9 @@ foreach my $input_file_set (@input_files)
 
 	my $line_num     = 0;
 	my $verbose_freq = 100;
-	my @data = ();
+	my @data         = ();
 	my($rows,$cols);
+	my $in_header    = 1;
 
 	#For each line in the current input file
 	while(getLine(*INPUT))
@@ -517,6 +516,28 @@ foreach my $input_file_set (@input_files)
 			       $outfile_stub : $input_file),
 			  "] Reading line: [$line_num].")
 	      unless($line_num % $verbose_freq);
+
+	    if($_ !~ /^\s*#/ && /\t/)
+	      {$in_header = 0}
+	    elsif($in_header)
+	      {
+		#Since this is going to be a row with data and we seem to have
+                #encountered a commented out header row, let's remove the
+		#comment character and allow this line to go into the @data
+		#array
+		if(/\t/ && /^\s*#\S/)
+		  {
+		    s/#//;
+		    $in_header = 0;
+		  }
+		#Else, let's print the header without including it in the
+		#transposition and not add it to the @data array
+		else
+		  {
+		    print;
+		    next;
+		  }
+	      }
 
 	    chomp;
 

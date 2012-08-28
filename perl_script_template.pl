@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 #Note: 'use warnings' is below instead of having -w above
 
-#Generated using perl_script_template.pl 2.4
+#Generated using perl_script_template.pl 2.5
 #Robert W. Leach
 #rwleach@ccr.buffalo.edu
 #Center for Computational Research
@@ -186,6 +186,7 @@ my $input_files         = [];
 my $outdirs             = [];
 my $current_output_file = '';
 my $help                = 0;
+my $adv_help            = 0;
 my $version             = 0;
 my $overwrite           = 0;
 my $skip_existing       = 0;
@@ -221,6 +222,7 @@ my $GetOptHash =
    'quiet'              => \$quiet,                    #OPTIONAL [Off]
    'debug:+'            => \$DEBUG,                    #OPTIONAL [Off]
    'help'               => \$help,                     #OPTIONAL [Off]
+   'advanced-help'      => \$adv_help,                 #OPTIONAL [Off]
    'version'            => \$version,                  #OPTIONAL [Off]
    'header!'            => \$header,                   #OPTIONAL [On]
    'error-type-limit=s' => \$error_limit,              #OPTIONAL [0]
@@ -263,9 +265,10 @@ unless(GetOptions(%$GetOptHash))
     quit(-1);
   }
 
-if(scalar(grep {$_} ($use_as_default,$help,$version)) > 1)
+if(scalar(grep {$_} ($use_as_default,$help,$adv_help,$version)) > 1)
   {
-    error("Options [",join(',',grep {$_} ($use_as_default,$help,$version)),
+    error("Options [",join(',',grep {$_} ($use_as_default,$help,$adv_help,
+					  $version)),
 	  "] are mutually exclusive.");
     quit(-20);
   }
@@ -290,7 +293,12 @@ print STDERR ("Starting dry run.\n") if($dry_run);
 debug('Debug mode on.') if($DEBUG > 1);
 
 #If the user has asked for help, call the help subroutine
-if($help)
+if($adv_help)
+  {
+    help(1);
+    quit(0);
+  }
+elsif($help)
   {
     help();
     quit(0);
@@ -1160,7 +1168,7 @@ sub sglob
 sub getVersion
   {
     my $full_version_flag = $_[0];
-    my $template_version_number = '2.4';
+    my $template_version_number = '2.5';
     my $version_message = '';
 
     #$software_version_number  - global
@@ -1326,6 +1334,15 @@ sub printRunReport
 #input files of type 2: [[4,5,6],[d,e,f]]
 #input files of type 3: [[x],[y],[z]]
 #resulting associations: [[1,4,x],[2,5,y],[3,6,z],[a,d,x],[b,e,y],[c,f,z]]
+#Example 5:
+#input files of type 1: [[1,a],[2,b],[3,c]]
+#input files of type 2: [[4,d],[5,e],[6,f]]
+#input files of type 3: [[x],[y],[z]]
+#resulting associations: [[1,4,x],[2,5,y],[3,6,z],[a,d,x],[b,e,y],[c,f,z]]
+#Example 6:
+#input files of type 1: [[1],[2]]
+#input files of type 2: [[a]]
+#resulting associations: [[1,a],[2,a]]
 
 #Note that a 1D array mixed with 2D arrays will prompt the subroutine to guess
 #which way to associate that series of files in the 1D array(s) with the rest.
@@ -1368,14 +1385,16 @@ sub getFileSets
 	debug("Copy Call 1") if($DEBUG > 99);
 	$outdir_array = copyArray(pop(@_));
       }
+    elsif($DEBUG > 1)
+      {debug("Assuming the last input array is NOT outdirs.  Outfile suffix ",
+	     "is ",(defined($outfile_suffix) ? '' : 'NOT '),"defined, last ",
+	     "array submitted is ",(defined($_[-1]) ? '' : 'NOT '),
+	     "defined, and the last array sumitted is size ",
+	     (defined($_[-1]) ? scalar(@{$_[-1]}) : 'undef'),".")}
+
+    #Assumes that outdirs were popped off above
     if(scalar(@_) > 1)
       {
-	debug("Assuming the last input array is NOT outdirs.  Outfile suffix ",
-	      "is ",(defined($outfile_suffix) ? '' : 'NOT '),"defined, last ",
-	      "array submitted is ",(defined($_[-1]) ? '' : 'NOT '),
-	      "defined, and the last array sumitted is size ",
-	      (defined($_[-1]) ? scalar(@{$_[-1]}) : 'undef'),".")
-	  if($DEBUG > 1);
 	debug("Copy Call 2") if($DEBUG > 99);
 	$file_types_array = [copyArray(grep {scalar(@$_)} @_)];
       }
@@ -1458,6 +1477,7 @@ sub getFileSets
 
     debug("Size of file types array after input check/fix: [",
 	  scalar(@$file_types_array),"].") if($DEBUG > 99);
+
     #If standard input has been redirected in
     if(!isStandardInputFromTerminal())
       {
@@ -1604,22 +1624,23 @@ sub getFileSets
 				 scalar(grep {scalar(@$_) > 1} @x))}
 			@$file_types_array)[0];
 
-    debug("Max number of rows and columns: [$max_num_rows,$max_num_cols].")
-      if($DEBUG > 99);
+    debug("Max number of rows and columns in 2D arrays: [$max_num_rows,",
+	  "$max_num_cols].") if($DEBUG > 99);
 
     debug("Size of file types array: [",scalar(@$file_types_array),"].")
       if($DEBUG > 99);
+
     foreach my $file_type_array (@$file_types_array)
       {
 	debug("Before changing 1D arrays. These should be array references: [",
 	      join(',',@$file_type_array),"].") if($DEBUG > 99);
 	foreach my $file_set (@$file_type_array)
-	  {debug(join(',',@$file_set)) if($DEBUG > 99)}
+	  {debug("\t",join(',',@$file_set)) if($DEBUG > 99)}
       }
 
     #Error check to make sure that all file type arrays are either the two
     #dimensions determined above or a 1D array equal in size to either of the
-    #dimensions (and fill in the 1D arrays to match)
+    #dimensions
     my $row_inconsistencies = 0;
     my $col_inconsistencies = 0;
     my $twod_col_inconsistencies = 0;
@@ -1702,7 +1723,7 @@ sub getFileSets
 		elsif(#$twods_exist &&
 		      !$one_type_mode &&
 		      $max_num_rows != $max_num_cols &&
-		      scalar(@{$subarrays[0]}) == $max_num_cols)
+		      scalar(@subarrays) == $max_num_cols)
 		  {@$file_type_array = transpose(\@subarrays)}
 	      }
 	    else #There must be 0 cols
@@ -1714,62 +1735,98 @@ sub getFileSets
 
 	    debug("This should be array references: [",
 		  join(',',@$file_type_array),"].") if($DEBUG > 99);
+	  }
+      }
 
-#	    if($twods_exist)
-#	      {
-		#Now I want to fill in the empty columns/rows with duplicates
-		#for the associations to be constructed easily.  I'm doing this
-		#here separately because sometimes above, I had to transpose
-		#the arrays
+    #Re-determine the maximum dimensions of rows and columns in case they
+    #changed with the array manipulations above
+    $max_num_rows = (#Sort on descending size so we can grab the largest one
+		     sort {$b <=> $a}
+		     #Convert the sub-arrays to their sizes
+		     map {scalar(@$_)}
+		     #Grep for arrays larger than 1 with subarrays larger
+		     #than 1
+		     grep {my @x = @$_;
+			   !$twods_exist ||
+			     (scalar(@x) > 1 &&
+			      scalar(grep {scalar(@$_) > 1} @x))}
+		     @$file_types_array)[0];
+
+    $max_num_cols = (#Sort on descending size so we can grab the largest one
+		     sort {$b <=> $a}
+		     #Convert the sub-arrays to their sizes
+		     map {my @x = @$_;(sort {$b <=> $a}
+				       map {scalar(@$_)} @x)[0]}
+		     #Grep for arrays larger than 1 with subarrays larger
+		     #than 1
+		     grep {my @x = @$_;
+			   !$twods_exist ||
+			     (scalar(@x) > 1 &&
+			      scalar(grep {scalar(@$_) > 1} @x))}
+		     @$file_types_array)[0];
+
+    #Now fill in the 1D arrays to match the dimensions of the other arrays
+    foreach my $file_type_array (@$file_types_array)
+      {
+	my @subarrays = @$file_type_array;
+
+	#If this is a 1D array
+	if(scalar(scalar(@subarrays) == 1 ||
+		  scalar(grep {scalar(@$_) == 1} @subarrays)))
+	  {
+	    #Now I want to fill in the empty columns/rows with duplicates
+	    #for the associations to be constructed easily.  I'm doing this
+	    #here separately because sometimes above, I had to transpose
+	    #the arrays
 	    my $num_rows = scalar(@$file_type_array);
 	    my $num_cols = scalar(@{$file_type_array->[0]});
-		if($num_rows < $max_num_rows)
+	    if($num_rows < $max_num_rows)
+	      {
+		debug("Pushing onto a 1D array with 1 row and multiple ",
+		      "columns because num_rows ($num_rows) < ",
+		      "max_num_rows ($max_num_rows)") if($DEBUG > 99);
+		foreach(scalar(@$file_type_array)..($max_num_rows - 1))
+		  {push(@$file_type_array,[@{$file_type_array->[0]}])}
+	      }
+	    #If all rows don't have the same number of cols
+	    if(scalar(@$file_type_array) ==
+	       scalar(grep {scalar(@$_) < $max_num_cols}
+		      @$file_type_array))
+	      {
+		debug("Pushing onto a 1D array with 1 col and multiple ",
+		      "rows because not all rows have the max number of ",
+		      "columns: ($max_num_cols)")
+		  if($DEBUG > 99);
+		my $row_index = 0;
+		foreach my $row_array (@$file_type_array)
 		  {
-		    debug("Pushing onto a 1D array with 1 row and multiple ",
-			  "columns") if($DEBUG > 99);
-		    foreach(scalar(@$file_type_array)..($max_num_rows - 1))
-		      {push(@$file_type_array,[@{$file_type_array->[0]}])}
-		  }
-		#If there's only 1 col
-		if(scalar(@$file_type_array) ==
-		      scalar(grep {scalar(@$_) < $max_num_cols}
-			     @$file_type_array))
-		  {
-		    debug("Pushing onto a 1D array with 1 col and multiple ",
-			  "rows")
-		      if($DEBUG > 99);
-		    my $row_index = 0;
-		    foreach my $row_array (@$file_type_array)
+		    my $this_max_cols = $max_num_cols;
+		    #If the number of rows is correct and there's only 1
+		    #2D array
+		    if($num_rows == $max_num_rows && $twods_exist == 1)
 		      {
-
-			my $this_max_cols = $max_num_cols;
-			#If the number of rows is correct and there's only 1
-			#2D array
-			if($num_rows == $max_num_rows && $twods_exist == 1)
-			  {
-			    #Match that one 2D array's number of columns
-			    my $two_d_array =
-			      (grep {my @x = @$_;
-				     scalar(@x) > 1 &&
-				       scalar(grep {scalar(@$_) > 1} @x)}
-			       @$file_types_array)[0];
-			    $this_max_cols =
-			      scalar(@{$two_d_array->[$row_index]});
-			  }
-
-			debug("Processing from $num_cols..($max_num_cols - 1)")
-			  if($DEBUG > 99);
-			foreach($num_cols..($this_max_cols - 1))
-			  {
-			    debug("Pushing [$row_array->[0]] on")
-			      if($DEBUG > 99);
-			    push(@$row_array,$row_array->[0]);
-			  }
-
-			$row_index++;
+			#Match that one 2D array's number of columns
+			my $two_d_array =
+			  (grep {my @x = @$_;
+				 scalar(@x) > 1 &&
+				   scalar(grep {scalar(@$_) > 1} @x)}
+			   @$file_types_array)[0];
+			$this_max_cols =
+			  scalar(@{$two_d_array->[$row_index]});
 		      }
+
+		    debug("Processing from $num_cols..($max_num_cols - 1)")
+		      if($DEBUG > 99);
+		    foreach($num_cols..($this_max_cols - 1))
+		      {
+			debug("Pushing [$row_array->[0]] on")
+			  if($DEBUG > 99);
+			push(@$row_array,$row_array->[0]);
+		      }
+
+		    $row_index++;
 		  }
-#	      }
+	      }
 	  }
       }
 
@@ -1779,7 +1836,8 @@ sub getFileSets
        ($twods_exist > 1 &&
 	($row_inconsistencies || $col_inconsistencies)))
       {
-	debug("Row inconsistencies: $row_inconsistencies Col inconsistencies: $col_inconsistencies");
+	debug("Row inconsistencies: $row_inconsistencies Col ",
+	      "inconsistencies: $col_inconsistencies");
 	error("The number of ",
 	      ($row_inconsistencies ? "sets of files" .
 	       (defined($outdir_array) && scalar($outdir_array) ?
@@ -1858,7 +1916,9 @@ sub getFileSets
 		    my $new_outfile_stub = $dirname .
 		      ($dirname =~ /\/$/ ? '' : '/') . $filename;
 
-		    debug("Prepending directory $new_outfile_stub using [$file_types_array->[-1]->[$row_index]->[$col_index]].")
+		    debug("Prepending directory $new_outfile_stub using [",
+			  $file_types_array->[-1]->[$row_index]->[$col_index],
+			  "].")
 		      if($DEBUG > 99);
 
 		    push(@{$outfile_stubs_array->[-1]},$new_outfile_stub);
@@ -1904,7 +1964,7 @@ sub getFileSets
       }
 
     debug("Processing input file sets: [(",
-	  join('),(',map {join(',',@$_)} @$infile_sets_array),")].")
+	  join('),(',(map {join(',',@$_)} @$infile_sets_array)),")].")
       if($DEBUG);
 
     return($infile_sets_array,$outfile_stubs_array);
@@ -2279,6 +2339,7 @@ sub saveUserDefaults
 sub help
   {
     my $script = $0;
+    my $advanced = $_[0];
     my $lmd = localtime((stat($script))[9]);
     $script =~ s/^.*\/([^\/]+)$/$1/;
 
@@ -2299,59 +2360,73 @@ Center for Computational Research
 Buffalo, NY 14203
 rwleach\@ccr.buffalo.edu
 
+end_print
+
+    if(!$advanced)
+      {
+	print << "end_print";
 * WHAT IS THIS: DESCRIBE THE PROGRAM HERE
 
 * INPUT FORMAT: DESCRIBE INPUT FILE FORMAT AND GIVE EXAMPLES HERE
 
 * OUTPUT FORMAT: DESCRIBE OUTPUT FORMAT HERE
 
-* ADVANCED FILE I/O FEATURES: Sets of input files, each with different output
-                              directories can be supplied.  Supply each file
-                              set with an additional -i (or --input-file) flag.
-                              The files will have to have quotes around them so
-                              that they are all associated with the preceding
-                              -i option.  Likewise, output directories
-                              (--outdir) can be supplied multiple times in the
-                              same order so that each input file set can be
-                              output into a different directory.  If the number
-                              of files in each set is the same, you can supply
-                              all output directories as a single set instead of
-                              each having a separate --outdir flag.  Here are
-                              some examples of what you can do:
+end_print
+      }
+    else
+      {
+	print << "end_print";
+* ADVANCED FILE I/O FEATURES:
 
-                              -i 'a b c' --outdir '1' -i 'd e f' --outdir '2'
+Sets of input files, each with different output directories can be supplied.
+Supply each file set with an additional -i (or --input-file) flag.  Wrap each
+set of files in quotes and separate them with spaces.
 
-                                 Result: 1/a,b,c  2/d,e,f
+Output directories (--outdir) can be supplied multiple times in the same order
+so that each input file set can be output into a different directory.  If the
+number of files in each set is the same, you can supply all output directories
+as a single set instead of each having a separate --outdir flag.
 
-                              -i 'a b c' -i 'd e f' --outdir '1 2 3'
+Examples:
 
-                                 Result: 1/a,d  2/b,e  3/c,f
+  $0 -i 'a b c' --outdir '1' -i 'd e f' --outdir '2'
 
-                                 This is the default behavior if the number of
-                                 sets and the number of files per set are all
-                                 the same.  For example, this is what will
-                                 happen:
+    Resulting file sets: 1/a,b,c  2/d,e,f
 
-                                    -i 'a b' -i 'd e' --outdir '1 2'
+  $0 -i 'a b c' -i 'd e f' --outdir '1 2 3'
 
-                                       Result: 1/a,d  2/b,e
+    Resulting file sets: 1/a,d  2/b,e  3/c,f
 
-                                 NOT this: 1/a,b 2/d,e  To do this, you must
-                                 supply the --outdir flag for each set, like
-                                 this:
+If the number of files per set is the same as the number of directories in 1
+set are the same, this is what will happen:
 
-                                    -i 'a b' -i 'd e' --outdir '1' --outdir '2'
+  $0 -i 'a b' -i 'd e' --outdir '1 2'
 
-                              -i 'a b c' -i 'd e f' --outdir '1 2'
+    Resulting file sets: 1/a,d  2/b,e
 
-                                 Result: 1/a,b,c  2/d,e,f
+NOT this: 1/a,b 2/d,e  To do this, you must supply the --outdir flag for each
+set, like this:
 
-                              -i 'a b c' --outdir '1 2 3' -i 'd e f' \
-                              --outdir '4 5 6'
+  $0 -i 'a b' -i 'd e' --outdir '1' --outdir '2'
 
-                                 Result: 1/a  2/b  3/c  4/d  5/e  6/f
+Other examples:
+
+  $0 -i 'a b c' -i 'd e f' --outdir '1 2'
+
+    Result: 1/a,b,c  2/d,e,f
+
+  $0 -i 'a b c' --outdir '1 2 3' -i 'd e f' --outdir '4 5 6'
+
+    Result: 1/a  2/b  3/c  4/d  5/e  6/f
+
+If this script was modified to handle multiple types of files that must be
+processed together, the files which are associated with one another will be
+associated in the same manner as the output directories above.  Basically, if
+the number of files or sets of files match, they will be automatically
+associated in the order in which they were provided on the command line.
 
 end_print
+      }
 
     return(0);
   }
@@ -2416,6 +2491,7 @@ sub usage
      --version            OPTIONAL Print version info.
      --use-as-default     OPTIONAL Save the command line arguments.
      --help               OPTIONAL Print info and input/output descriptions.
+     --advanced-help      OPTIONAL Print advanced help.
 end_print
 
 	my @user_defaults = getUserDefaults();

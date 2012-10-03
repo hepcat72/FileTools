@@ -29,6 +29,8 @@ my $with         = 'rename_placeholder';
 my $pattern_mode = 0;
 my $number_mode  = 0;
 my $increment    = 0;
+my $dry_run      = 0;
+my $DEBUG        = 0;
 
 #If there are no arguments and no files directed in
 if(scalar(@ARGV) == 0)
@@ -43,6 +45,7 @@ GetOptions('r|replace=s'        => \$replace,      #REQUIRED if -w not supplied
 	   'p|pattern-mode!'    => \$pattern_mode, #OPTIONAL [Off]
 	   'n|number-mode!'     => \$number_mode,  #OPTIONAL [Off]
            'skip-existing-nums!'=> \$increment,    #OPTIONAL [Off]
+	   'd|dry-run!'         => \$dry_run,      #OPTIONAL [Off]
 	   'f|force!'           => \$force,        #OPTIONAL [Off]
 	   'version!'           => \$version,      #OPTIONAL [Off]
 	   'q|quiet!'           => \$quiet,        #OPTIONAL [Off]
@@ -125,8 +128,11 @@ if(scalar(@input_files) == 0)
 $replace =~ s/.*\///;
 $replace = quotemeta($replace) if(defined($replace) && !$pattern_mode);
 
+debug("Pattern: /$replace/$with/");
+
 my $renamed = 0;
 my $number  = 1;
+my $exist_check = {};
 
 #For each input file of the same type
 foreach my $input_file (@input_files)
@@ -141,9 +147,16 @@ foreach my $input_file (@input_files)
 	$with    = $number if($number_mode);
 
 	if($append_flag)
-	  {$newname .= $with}
+	  {
+	    debug("Appending");
+	    $newname .= $with;
+	  }
 	else
-	  {$newname =~ s/(?=[^\/]*\Z)$replace/$with/}
+	  {
+	    debug("$newname =~ s/(?=[^\\/]*\Z)$replace/$with/");
+	    $newname =~ s/(?=[^\/]*\Z)$replace/$with/;
+	    debug("Replaced: $newname");
+	  }
 
 	#If we're in "skip existing nums" mode and the file exists, increment
 	if($input_file ne $newname && $number_mode && $increment &&
@@ -154,11 +167,13 @@ foreach my $input_file (@input_files)
 	while($input_file ne $newname && $number_mode && $increment &&
 	      -e $newname);
 
+    debug("$input_file -> $newname");
+
     if($input_file eq $newname)
       {next}
     elsif(!$force && -e $newname)
       {
-	$number++;
+	$number++; #Advance the number anyway so they can force it later
 	error("$newname already exists.  Use -f to override.") if(!$quiet);
       }
     else
@@ -166,14 +181,27 @@ foreach my $input_file (@input_files)
 	warning("Replacing $newname") if(!$quiet && -e $newname);
 	if($verbose)
 	  {print("Renaming [$input_file] to [$newname].\n")}
-	rename($input_file,$newname);
-	$renamed++ unless($?);
-	error("Unable to rename [$input_file].  $!\n") if($?);
-	$number++;
+	rename($input_file,$newname) unless($dry_run);
+	if(!$? && !exists($exist_check->{$newname}))
+	  {
+	    $exist_check->{$newname} = 1;
+	    $renamed++;
+	  }
+	else
+	  {
+	    error("Unable to rename [$input_file].  ",
+		  ($dry_run && exists($exist_check->{$newname}) ?
+		   "This rename operation will conflict with a " .
+		   "previously renamed file." : $!),"\n");
+	  }
+	$number++; #Advance the number in any case so they can force it later
       }
   }
 
-print("$renamed files successfully renamed.\n") unless($quiet);
+if($dry_run)
+  {print("$renamed files will be renamed.\n") unless($quiet)}
+else
+  {print("$renamed files successfully renamed.\n") unless($quiet)}
 
 
 ##
@@ -384,6 +412,8 @@ sub getLine
 
 sub debug
   {
+    return unless($DEBUG);
+
     #Gather and concatenate the error message and split on hard returns
     my @debug_message = split("\n",join('',@_));
     pop(@debug_message) if($debug_message[-1] !~ /\S/);

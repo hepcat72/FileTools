@@ -1,12 +1,19 @@
 #!/usr/local/bin/perl
 
-my $warnme = 1; #Tell me when unclosed tags are encountered
-my $numwarn = 0;
+my $warnme          = 1; #Tell me when unclosed tags are encountered
+my $numwarn         = 0;
+my $nomoltilinetags = 1; #take out newlines between all <> tags before printing
 
 $html = join('',<STDIN>);
 
+if($nomoltilinetags)
+  {
+    while($html =~ /(<[^><]+)[\n\r]/)
+      {$html =~ s/(<[^><]+)[\n\r]+/$1 /g}
+  }
+
 $|=1;
-@ignored_tags = ('br','hr','\!\-\-','img','input','p','\?xml');
+@ignored_tags = ('br','hr','\!\-\-','img','input','p','\?xml','meta','link');
 @close_optional_tags = ('td','tr');
 
 $indent_amt = 2;
@@ -28,7 +35,8 @@ foreach $tagsplit (split(/[\s]*(?=<)|\n|\r/,$html))
 	next;
       }
 
-    if(grep {$tag =~ /$_$/i || $tag =~ /\!\-\-/} @ignored_tags)
+    if(scalar(grep {$tag =~ /$_$/i || $tag =~ /\!\-\-/} @ignored_tags) ||
+       $tag =~ /^!/ || $tag =~ /\/$/)
       {print(' ' x $indent,$tagsplit,"\n")}
     elsif(!$end_flag)
       {
@@ -51,9 +59,13 @@ foreach $tagsplit (split(/[\s]*(?=<)|\n|\r/,$html))
 	while(@flag_stack && $flag_stack[-1] !~ /$tag_pattern/i)
 	  {
             if($warnme)
-              {$numwarn++;print STDERR ("WARNING: unclosed tag here: [",join(':',@flag_stack),"].\n")}
+              {
+		$numwarn++;
+		print STDERR ("WARNING: unclosed tag here: [",
+			      join(':',@flag_stack),"].\n");
+	      }
 #	    print("POPPING: ",
-		  pop(@flag_stack)
+	    pop(@flag_stack)
 #		  ,"\n")
 	      ;
 	    $indent -= $indent_amt if($indent);

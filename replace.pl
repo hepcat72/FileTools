@@ -9,7 +9,7 @@
 #Copyright 2005
 
 my $template_version_number = '1.20';
-my $software_version_number = '1.4';
+my $software_version_number = '1.6';
 
 ##
 ## Start Main
@@ -133,9 +133,15 @@ elsif(!defined($with))
 #glob the input files
 @input_files = map {glob($_)} @input_files;
 
+my $captures = [];
+
 #Fix the search string to escape metacharacters (if we're not in regex mode)
 if(!$regex_mode_flag)
   {$replace = quotemeta($replace)}
+#Else see what substitutions might the user be asking for
+elsif($replace =~ /\(/ && $with =~ /\$\d/)
+  {while($with =~ /(?<!\\)(\$\d+)/g)
+     {push(@$captures,$1)}}
 
 #Fix the replace string to escape forward slashes
 #$with =~ s/\//\\\//g;
@@ -168,7 +174,8 @@ foreach my $input_file (@input_files)
 	      $with,
 	      $recurse_flag,
 	      $force,
-	      $extensions);
+	      $extensions,
+	      $captures);
   }
 
 
@@ -271,7 +278,12 @@ USAGE2: $script -s search_string -r replace_string [-p] [--recurse] [-e "extensi
                                    second argument and no flag was used for the
                                    search string.
      -p|--perl-regex-mode OPTIONAL [Off] Treat the search string as a perl
-                                   regular expression.
+                                   regular expression.  Also, allows the
+                                   replacement to contain numeric references to
+                                   matches captured in \$1, \$2, etc..
+                                   E.g. `-r 'find (\\d+) matches' -w '$1'` will
+                                   replace "Find 10 matches" with "10" when
+                                   using the -p option.
      --recurse            OPTIONAL [Off] Search and replace recursively into
                                    all subdirectories.
      -e|--extensions      OPTIONAL [all] The extensions of the files to search.
@@ -681,12 +693,13 @@ sub getCommand
 sub searchrep
   {
     my $input_file     = $_[0];
-    my $replace  = $_[1];
-    my $with = $_[2];
+    my $replace        = $_[1];
+    my $with           = $_[2];
     my $recurse_flag   = $_[3];
     my $force          = $_[4];
     my $extensions     = $_[5];
-    my $not_first_call = $_[6];  #DO NOT SUPPLY.  INTERNAL USE ONLY.
+    my $captures       = $_[6];
+    my $not_first_call = $_[7];  #DO NOT SUPPLY.  INTERNAL USE ONLY.
 
     debug("searchrep called with input file: [$input_file]");
 
@@ -697,7 +710,7 @@ sub searchrep
 	return if(!$recurse_flag ||
 		  (!$not_first_call && $input_file =~ /^\.\.?$/));
 
-	verbose("SEARCHING $input_file RECURSIVELY");
+	verbose(1,"SEARCHING $input_file RECURSIVELY");
 
 	$input_file .= '/' if($input_file !~ /\/$/);
 
@@ -713,6 +726,7 @@ sub searchrep
 		     $recurse_flag,
 		     $force,
 		     $extensions,
+		     $captures,
 		     1)}
       }
     elsif(scalar(@$extensions) == 0 ||
@@ -720,12 +734,14 @@ sub searchrep
       {
 	return if(-B $input_file);
 
-	verbose("SEARCHING $input_file");
+	verbose(1,"SEARCHING $input_file");
 
 	#Open and select the next output file if an output file name suffix has
 	#been defined
 	if(defined($outfile_suffix))
 	  {
+	    debug("outfile suffix defined.");
+
 	    #Set the current output file name
 	    $current_output_file = $input_file . $outfile_suffix;
 
@@ -736,8 +752,7 @@ sub searchrep
 	    if(!$force && -e $current_output_file)
 	      {
 		error("Output file exists: [$current_output_file].  ",
-		      "Use the force flag (-f) to override.")
-		  unless($outfile_suffix eq '');
+		      "Use the force flag (-f) to override.");
 		return;
 	      }
 	    elsif($outfile_suffix ne '')
@@ -764,7 +779,7 @@ sub searchrep
 	    return;
 	  }
 	else
-	  {verbose("[",
+	  {verbose(1,"[",
 		   ($input_file eq '-' ? 'STDIN' : $input_file),
 		   "] Opened input file.")}
 
@@ -773,6 +788,7 @@ sub searchrep
 
 	my $output = '';
 	my $changed = 0;
+	my($num_replacements);
 
 	#For each line in the current input file
 	while(getLine(\*INPUT,$quiet))
@@ -783,10 +799,51 @@ sub searchrep
 		       ($input_file eq '-' ? 'STDIN' : $input_file),
 		       "] Reading line $line_num.")}
 
-	    if(s/($replace)/$with/g)
+	    if(scalar(@$captures))
 	      {
-		$changed = 1;
-		debug("Replacing [$1] with [$with]");
+		my @replacements = ();
+		my $last_pos     = 0;
+		while(/$replace/g)
+		  {
+		    #Save the position we've left off at
+		    my $cur_pos = pos();
+		    #Save the length of the match so we can adjust pos() later
+		    my $len = length($&);
+		    #Save what was matched
+		    my $matched = quotemeta($&);
+		    #Evaluate the values of $1, $2, $3,... etc.
+		    my @strs = map {eval($_)} @$captures;
+		    #Create a new 'with' string
+		    my $tmpwith = $with;
+		    #Enter the actual values into the new 'with' string
+		    #Assues order of variables is the same as the values
+		    foreach my $rstr (@strs)
+		      {$tmpwith =~ s/(?<!\\)\$\d+/$rstr/}
+		    #Calculate where we will leave off with the substitution
+		    my $newpos = $cur_pos + (length($tmpwith) - $len);
+		    #Store the substitution
+		    push(@replacements,[$matched,$tmpwith,$cur_pos-$len]);
+		    #Now record the number of substitutions and report debug
+		    #output
+		    $changed++;
+		    debug("Replacing [$matched] with [$tmpwith] and setting ",
+			  "position from [$cur_pos] to [$newpos].");
+		  }
+
+		#Make the stored replacements in reverse order so that the
+		#positions are still relevant
+		foreach my $replacement (reverse(@replacements))
+		  {
+		    #Set the position
+		    pos($_) = $replacement->[2];
+		    #Make the replacement
+		    s/$replacement->[0]/$replacement->[1]/;
+		  }
+	      }
+	    elsif($num_replacements = s/$replace/$with/g)
+	      {
+		$changed += $num_replacements;
+		debug("Replacing [$&] with [$with]");
 	      }
 
 	    if(defined($outfile_suffix) &&
@@ -818,12 +875,12 @@ sub searchrep
 
 	    chmodmatch($input_file,"$current_output_file.replace-tmp");
 
-	    verbose("[$current_output_file] Opened output file.");
+	    verbose(1,"[$current_output_file] Opened output file.");
 	    unless(rename("$current_output_file.replace-tmp",
 			  $current_output_file))
 	      {error("Unable to rename the temporary file: ",
 		     "[$current_output_file.replace-tmp]")}
-	    verbose("[$current_output_file] Closed output file.");
+	    verbose(1,"[$current_output_file] Closed output file.");
 	  }
 	elsif($outfile_suffix eq '')
 	  {
@@ -839,7 +896,7 @@ sub searchrep
 	    print OUTPUT ($output);
 	    close(OUTPUT);
 
-	    verbose("[$current_output_file] Opened output file.");
+	    verbose(1,"[$current_output_file] Opened output file.");
 	    if($changed)
 	      {
 		chmodmatch($input_file,"$current_output_file.replace-tmp");
@@ -850,10 +907,12 @@ sub searchrep
 	      }
 	    else
 	      {unlink("$current_output_file.replace-tmp")}
-	    verbose("[$current_output_file] Closed output file.");
+	    verbose(1,"[$current_output_file] Closed output file.");
 	  }
 
-	verbose("CHANGED: $input_file") if($changed);
+	verbose("$input_file: ",
+		($changed ? "$changed REPLACEMENT" . ($changed > 1 ? 'S' : '')
+		 : 'UNCHANGED'));
       }
     else
       {debug("SKIPPING INPUT FILE: [$input_file]")}

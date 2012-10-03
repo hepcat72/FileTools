@@ -290,9 +290,11 @@ my($delim,$delim_pat);
 #For each set of input files associated by getFileSets
 foreach my $set_num (0..$#$input_file_sets)
   {
-    my @data   = ();
-    $delim     = shift(@$delims) if(scalar(@$delims));
-    $delim_pat = quotemeta($delim);
+    my @data     = ();
+    $delim       = shift(@$delims) if(scalar(@$delims));
+    $delim_pat   = quotemeta($delim);
+    #Keep track of the largest number of columns per file
+    my @maxsizes = ();
 
     debug("Using delimiter [$delim].");
 
@@ -314,6 +316,9 @@ foreach my $set_num (0..$#$input_file_sets)
 	next if($dry_run);
 
 	push(@data,[]);
+
+	#Keep track of the largest number of columns per file
+	push(@maxsizes,0);
 
 	my $line_num     = 0;
 	my $verbose_freq = 100;
@@ -341,6 +346,11 @@ foreach my $set_num (0..$#$input_file_sets)
 	    chomp;
 
 	    push(@{$data[-1]},[split(/$delim_pat/,$_,-1)]);
+
+	    #Keep track of the largest number of columns for this file in case
+	    #The user is merging all columns
+	    if(scalar(@{$data[-1]->[-1]}) > $maxsizes[-1])
+	      {$maxsizes[-1] = scalar(@{$data[-1]->[-1]})}
 	  }
 
 	closeIn(*INPUT);
@@ -404,12 +414,12 @@ foreach my $set_num (0..$#$input_file_sets)
 	    #If the user supplied an empty string, it means add all columns
 	    if($col_index eq '')
 	      {
-		my $max_num_cols = 0;
-		my $row_index = 0;
+		my $max_num_cols  = 0;
+		my $row_index     = 0;
 		my $num_cols_hash = {};
 		foreach my $row_array (@{$data[$file_index]})
 		  {
-		    #If the out_data aray doesn't have this row yet, push it on
+		    #If the out_data array doesn't have this row, push it on
 		    unless(exists($out_data[$row_index]))
 		      {
 			#Back-fill columns already pushed on w/ empty strings
@@ -436,15 +446,28 @@ foreach my $set_num (0..$#$input_file_sets)
 			    join(', ',
 				 map {"[$num_cols_hash->{$_}] rows with " .
 					"[$_] columns"}
-				 keys(%$num_cols_hash)),"].");
+				 keys(%$num_cols_hash)),"].  The missing ",
+			    "columns will be filled in with empty strings.");
 
 		    #Now go through and fix the columns
 		    my $tot_num_cols = $num_cols_pushed_on + $max_num_cols;
+		    my $rown = 1;
 		    foreach my $out_row (@out_data)
 		      {
+			if(scalar(@$out_row) > $tot_num_cols)
+			  {error("Too many columns in row [$rown].  Should ",
+				 "have [$tot_num_cols] but has [",
+				 scalar(@$out_row),"].")}
+			debug("Row [$rown] has [",scalar(@$out_row),
+			      "] columns and should have [$tot_num_cols].");
 			my $diff_num_cols = $tot_num_cols - scalar(@$out_row);
 			if($diff_num_cols > 0)
-			  {push(@$out_row,map {''} (1..$tot_num_cols))}
+			  {
+			    debug("Pushing [$diff_num_cols] empty strings ",
+				  "onto row [$rown].");
+			    push(@$out_row,map {''} (1..$diff_num_cols));
+			  }
+			$rown++;
 		      }
 		  }
 

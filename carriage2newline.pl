@@ -8,7 +8,7 @@
 #Copyright 2012
 
 #These variables (in main) are used by getVersion() and usage()
-my $software_version_number = '1.0';
+my $software_version_number = '1.1';
 my $created_on_date         = '7/10/2012';
 
 ##
@@ -712,21 +712,7 @@ sub getLine
 	  }
 	
 	#Otherwise return everything else
-	return(map
-	       {
-		 #If carriage returns were substituted and we haven't already
-		 #issued a carriage return warning for this file handle
-		 if(s/\r\n|\n\r|\r/\n/g &&
-		    !exists($main::infile_line_buffer->{$file_handle}
-			    ->{WARNED}))
-		   {
-		     $main::infile_line_buffer->{$file_handle}->{WARNED}
-		       = 1;
-		     warning('Carriage returns were found in your file ',
-			     'and replaced with hard returns.');
-		   }
-		 split(/(?<=\n)/,$_);
-	       } <$file_handle>);
+	return(map {s/\r\n|\n\r|\r/\n/g;split(/(?<=\n)/,$_);} <$file_handle>);
       }
 
     #If the file handle's buffer is empty, put more on
@@ -737,13 +723,7 @@ sub getLine
 	#end of the last line.  I may not have it completely right yet.
 	if(defined($line))
 	  {
-	    if($line =~ s/\r\n|\n\r|\r/\n/g &&
-	       !exists($main::infile_line_buffer->{$file_handle}->{WARNED}))
-	      {
-		$main::infile_line_buffer->{$file_handle}->{WARNED} = 1;
-		warning('Carriage returns were found in your file and ',
-			'replaced with hard returns.');
-	      }
+	    $line =~ s/\r\n|\n\r|\r/\n/g;
 	    @{$main::infile_line_buffer->{$file_handle}->{FILE}} =
 	      split(/(?<=\n)/,$line);
 	  }

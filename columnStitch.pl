@@ -8,7 +8,7 @@
 #Copyright 2012
 
 #These variables (in main) are used by getVersion() and usage()
-my $software_version_number = '1.1';
+my $software_version_number = '1.2';
 my $created_on_date         = '4/24/2012';
 
 ##
@@ -1400,19 +1400,20 @@ sub getFileSets
 			  !defined($_[-1]) ||
 			  scalar(@{$_[-1]}) == 0))
       {
-	debug("Assuming the last input array is outdirs.")
-	  if($DEBUG > 1);
+	debug("Assuming the last input array is outdirs.") if($DEBUG > 1);
 	debug("Copy Call 1") if($DEBUG > 99);
 	$outdir_array = copyArray(pop(@_));
       }
+    elsif($DEBUG > 1)
+      {debug("Assuming the last input array is NOT outdirs.  Outfile suffix ",
+	     "is ",(defined($outfile_suffix) ? '' : 'NOT '),"defined, last ",
+	     "array submitted is ",(defined($_[-1]) ? '' : 'NOT '),
+	     "defined, and the last array sumitted is size ",
+	     (defined($_[-1]) ? scalar(@{$_[-1]}) : 'undef'),".")}
+
+    #Assumes that outdirs were popped off above
     if(scalar(@_) > 1)
       {
-	debug("Assuming the last input array is NOT outdirs.  Outfile suffix ",
-	      "is ",(defined($outfile_suffix) ? '' : 'NOT '),"defined, last ",
-	      "array submitted is ",(defined($_[-1]) ? '' : 'NOT '),
-	      "defined, and the last array sumitted is size ",
-	      (defined($_[-1]) ? scalar(@{$_[-1]}) : 'undef'),".")
-	  if($DEBUG > 1);
 	debug("Copy Call 2") if($DEBUG > 99);
 	$file_types_array = [copyArray(grep {scalar(@$_)} @_)];
       }
@@ -1421,6 +1422,12 @@ sub getFileSets
 	debug("Copy Call 3") if($DEBUG > 99);
 	$file_types_array = copyArray($_[0]);
       }
+
+    debug("Contents of copied file types array: [(",
+	  join(')(',map {my $t=$_;'{' .
+			   join('}{',map {my $e=$_;'[' . join('][',@$e) . ']'}
+				@$t) . '}'} @$file_types_array),")].")
+      if($DEBUG > 99);
 
     debug("Initial size of file types array: [",scalar(@$file_types_array),
 	  "].") if($DEBUG > 99);
@@ -1495,6 +1502,13 @@ sub getFileSets
 
     debug("Size of file types array after input check/fix: [",
 	  scalar(@$file_types_array),"].") if($DEBUG > 99);
+
+    debug("Contents of file types array before adding dash file: [(",
+	  join(')(',map {my $t=$_;'{' .
+			   join('}{',map {my $e=$_;'[' . join('][',@$e) . ']'}
+				@$t) . '}'} @$file_types_array),")].")
+      if($DEBUG > 99);
+
     #If standard input has been redirected in
     if(!isStandardInputFromTerminal())
       {
@@ -1505,7 +1519,7 @@ sub getFileSets
 	if(scalar(grep {$_ ne '-'} map {@$_} @$input_files) == 1)
 	  {
 	    $outfile_stub = (grep {$_ ne '-'} map {@$_} @$input_files)[0];
-	    @$input_files = ();
+	    #@$input_files = ();
 
 	    #If the stub contains a directory path AND outdirs were supplied
 	    if($outfile_stub =~ m%/% &&
@@ -1526,8 +1540,12 @@ sub getFileSets
 		   'referred to as [',$outfile_stub,'].')}
 
 	#Unless the dash was supplied explicitly by the user, push it on
-	unless(scalar(grep {$_ eq '-'} map {@$_} @$input_files))
+	unless(scalar(grep {my $t=$_;scalar(grep {my $e=$_;
+						  scalar(grep {$_ eq '-'} @$e)}
+					    @$t)} @$file_types_array))
 	  {
+	    debug("Pushing on the dash file.") if($DEBUG > 99);
+
 	    #If there are other input files present, push it
 	    if(scalar(@$input_files))
 	      {push(@{$input_files->[-1]},'-')}
@@ -1536,6 +1554,12 @@ sub getFileSets
 	      {@$input_files = (['-'])}
 	  }
       }
+
+    debug("Contents of file types array after adding dash file: [(",
+	  join(')(',map {my $t=$_;'{' .
+			   join('}{',map {my $e=$_;'[' . join('][',@$e) . ']'}
+				@$t) . '}'} @$file_types_array),")].")
+      if($DEBUG > 99);
 
     my $one_type_mode = 0;
     #If there's only 1 input file type, merge all the sub-arrays
@@ -1550,6 +1574,12 @@ sub getFileSets
 	  {push(@merged_array,@$row_array)}
 	$file_types_array->[0] = [[@merged_array]];
       }
+
+    debug("Contents of file types array after merging sub-arrays: [(",
+	  join(')(',map {my $t=$_;'{' .
+			   join('}{',map {my $e=$_;'[' . join('][',@$e) . ']'}
+				@$t) . '}'} @$file_types_array),")].")
+      if($DEBUG > 99);
 
     debug("OUTDIR ARRAY DEFINED?: [",defined($outdir_array),"] SIZE: [",
 	  (defined($outdir_array) ? scalar(@$outdir_array) : '0'),"].")
@@ -1608,6 +1638,12 @@ sub getFileSets
 	push(@$file_types_array,$outdir_array);
       }
 
+    debug("Contents of file types array after adding outdirs: [(",
+	  join(')(',map {my $t=$_;'{' .
+			   join('}{',map {my $e=$_;'[' . join('][',@$e) . ']'}
+				@$t) . '}'} @$file_types_array),")].")
+      if($DEBUG > 99);
+
     my $twods_exist = scalar(grep {my @x = @$_;
 			      scalar(@x) > 1 &&
 				scalar(grep {scalar(@$_) > 1} @x)}
@@ -1640,22 +1676,21 @@ sub getFileSets
 				 scalar(grep {scalar(@$_) > 1} @x))}
 			@$file_types_array)[0];
 
-    debug("Max number of rows and columns: [$max_num_rows,$max_num_cols].")
-      if($DEBUG > 99);
+    debug("Max number of rows and columns in 2D arrays: [$max_num_rows,",
+	  "$max_num_cols].") if($DEBUG > 99);
 
     debug("Size of file types array: [",scalar(@$file_types_array),"].")
       if($DEBUG > 99);
-    foreach my $file_type_array (@$file_types_array)
-      {
-	debug("Before changing 1D arrays. These should be array references: [",
-	      join(',',@$file_type_array),"].") if($DEBUG > 99);
-	foreach my $file_set (@$file_type_array)
-	  {debug(join(',',@$file_set)) if($DEBUG > 99)}
-      }
+
+    debug("Contents of modified file types array: [(",
+	  join(')(',map {my $t=$_;'{' .
+			   join('}{',map {my $e=$_;'[' . join('][',@$e) . ']'}
+				@$t) . '}'} @$file_types_array),")].")
+      if($DEBUG > 99);
 
     #Error check to make sure that all file type arrays are either the two
     #dimensions determined above or a 1D array equal in size to either of the
-    #dimensions (and fill in the 1D arrays to match)
+    #dimensions
     my $row_inconsistencies = 0;
     my $col_inconsistencies = 0;
     my $twod_col_inconsistencies = 0;
@@ -1738,7 +1773,7 @@ sub getFileSets
 		elsif(#$twods_exist &&
 		      !$one_type_mode &&
 		      $max_num_rows != $max_num_cols &&
-		      scalar(@{$subarrays[0]}) == $max_num_cols)
+		      scalar(@subarrays) == $max_num_cols)
 		  {@$file_type_array = transpose(\@subarrays)}
 	      }
 	    else #There must be 0 cols
@@ -1750,62 +1785,98 @@ sub getFileSets
 
 	    debug("This should be array references: [",
 		  join(',',@$file_type_array),"].") if($DEBUG > 99);
+	  }
+      }
 
-#	    if($twods_exist)
-#	      {
-		#Now I want to fill in the empty columns/rows with duplicates
-		#for the associations to be constructed easily.  I'm doing this
-		#here separately because sometimes above, I had to transpose
-		#the arrays
+    #Re-determine the maximum dimensions of rows and columns in case they
+    #changed with the array manipulations above
+    $max_num_rows = (#Sort on descending size so we can grab the largest one
+		     sort {$b <=> $a}
+		     #Convert the sub-arrays to their sizes
+		     map {scalar(@$_)}
+		     #Grep for arrays larger than 1 with subarrays larger
+		     #than 1
+		     grep {my @x = @$_;
+			   !$twods_exist ||
+			     (scalar(@x) > 1 &&
+			      scalar(grep {scalar(@$_) > 1} @x))}
+		     @$file_types_array)[0];
+
+    $max_num_cols = (#Sort on descending size so we can grab the largest one
+		     sort {$b <=> $a}
+		     #Convert the sub-arrays to their sizes
+		     map {my @x = @$_;(sort {$b <=> $a}
+				       map {scalar(@$_)} @x)[0]}
+		     #Grep for arrays larger than 1 with subarrays larger
+		     #than 1
+		     grep {my @x = @$_;
+			   !$twods_exist ||
+			     (scalar(@x) > 1 &&
+			      scalar(grep {scalar(@$_) > 1} @x))}
+		     @$file_types_array)[0];
+
+    #Now fill in the 1D arrays to match the dimensions of the other arrays
+    foreach my $file_type_array (@$file_types_array)
+      {
+	my @subarrays = @$file_type_array;
+
+	#If this is a 1D array
+	if(scalar(scalar(@subarrays) == 1 ||
+		  scalar(grep {scalar(@$_) == 1} @subarrays)))
+	  {
+	    #Now I want to fill in the empty columns/rows with duplicates
+	    #for the associations to be constructed easily.  I'm doing this
+	    #here separately because sometimes above, I had to transpose
+	    #the arrays
 	    my $num_rows = scalar(@$file_type_array);
 	    my $num_cols = scalar(@{$file_type_array->[0]});
-		if($num_rows < $max_num_rows)
+	    if($num_rows < $max_num_rows)
+	      {
+		debug("Pushing onto a 1D array with 1 row and multiple ",
+		      "columns because num_rows ($num_rows) < ",
+		      "max_num_rows ($max_num_rows)") if($DEBUG > 99);
+		foreach(scalar(@$file_type_array)..($max_num_rows - 1))
+		  {push(@$file_type_array,[@{$file_type_array->[0]}])}
+	      }
+	    #If all rows don't have the same number of cols
+	    if(scalar(@$file_type_array) ==
+	       scalar(grep {scalar(@$_) < $max_num_cols}
+		      @$file_type_array))
+	      {
+		debug("Pushing onto a 1D array with 1 col and multiple ",
+		      "rows because not all rows have the max number of ",
+		      "columns: ($max_num_cols)")
+		  if($DEBUG > 99);
+		my $row_index = 0;
+		foreach my $row_array (@$file_type_array)
 		  {
-		    debug("Pushing onto a 1D array with 1 row and multiple ",
-			  "columns") if($DEBUG > 99);
-		    foreach(scalar(@$file_type_array)..($max_num_rows - 1))
-		      {push(@$file_type_array,[@{$file_type_array->[0]}])}
-		  }
-		#If there's only 1 col
-		if(scalar(@$file_type_array) ==
-		      scalar(grep {scalar(@$_) < $max_num_cols}
-			     @$file_type_array))
-		  {
-		    debug("Pushing onto a 1D array with 1 col and multiple ",
-			  "rows")
-		      if($DEBUG > 99);
-		    my $row_index = 0;
-		    foreach my $row_array (@$file_type_array)
+		    my $this_max_cols = $max_num_cols;
+		    #If the number of rows is correct and there's only 1
+		    #2D array
+		    if($num_rows == $max_num_rows && $twods_exist == 1)
 		      {
-
-			my $this_max_cols = $max_num_cols;
-			#If the number of rows is correct and there's only 1
-			#2D array
-			if($num_rows == $max_num_rows && $twods_exist == 1)
-			  {
-			    #Match that one 2D array's number of columns
-			    my $two_d_array =
-			      (grep {my @x = @$_;
-				     scalar(@x) > 1 &&
-				       scalar(grep {scalar(@$_) > 1} @x)}
-			       @$file_types_array)[0];
-			    $this_max_cols =
-			      scalar(@{$two_d_array->[$row_index]});
-			  }
-
-			debug("Processing from $num_cols..($max_num_cols - 1)")
-			  if($DEBUG > 99);
-			foreach($num_cols..($this_max_cols - 1))
-			  {
-			    debug("Pushing [$row_array->[0]] on")
-			      if($DEBUG > 99);
-			    push(@$row_array,$row_array->[0]);
-			  }
-
-			$row_index++;
+			#Match that one 2D array's number of columns
+			my $two_d_array =
+			  (grep {my @x = @$_;
+				 scalar(@x) > 1 &&
+				   scalar(grep {scalar(@$_) > 1} @x)}
+			   @$file_types_array)[0];
+			$this_max_cols =
+			  scalar(@{$two_d_array->[$row_index]});
 		      }
+
+		    debug("Processing from $num_cols..($max_num_cols - 1)")
+		      if($DEBUG > 99);
+		    foreach($num_cols..($this_max_cols - 1))
+		      {
+			debug("Pushing [$row_array->[0]] on")
+			  if($DEBUG > 99);
+			push(@$row_array,$row_array->[0]);
+		      }
+
+		    $row_index++;
 		  }
-#	      }
+	      }
 	  }
       }
 
@@ -1895,7 +1966,9 @@ sub getFileSets
 		    my $new_outfile_stub = $dirname .
 		      ($dirname =~ /\/$/ ? '' : '/') . $filename;
 
-		    debug("Prepending directory $new_outfile_stub using [$file_types_array->[-1]->[$row_index]->[$col_index]].")
+		    debug("Prepending directory $new_outfile_stub using [",
+			  $file_types_array->[-1]->[$row_index]->[$col_index],
+			  "].")
 		      if($DEBUG > 99);
 
 		    push(@{$outfile_stubs_array->[-1]},$new_outfile_stub);
@@ -1941,7 +2014,7 @@ sub getFileSets
       }
 
     debug("Processing input file sets: [(",
-	  join('),(',map {join(',',@$_)} @$infile_sets_array),")].")
+	  join('),(',(map {join(',',@$_)} @$infile_sets_array)),")].")
       if($DEBUG);
 
     return($infile_sets_array,$outfile_stubs_array);

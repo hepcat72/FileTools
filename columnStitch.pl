@@ -1387,7 +1387,8 @@ sub printRunReport
 #be a file name "stub" to be used to append outfile suffixes.
 
 #Globals used: $overwrite, $skip_existing, $outfile_suffix
-
+##THIS SUB IS MODIFIED FROM THE 2.6 version of perl_script_template.pl to work
+##specifically with this script.
 sub getFileSets
   {
     my($file_types_array,$outdir_array);
@@ -1512,14 +1513,29 @@ sub getFileSets
     #If standard input has been redirected in
     if(!isStandardInputFromTerminal())
       {
-	my $input_files = $file_types_array->[0];
+	#Any element of the file types array can be the type of
+	#input file that can be provided via STDIN.
+	my $num_input_files = scalar(grep {$_ ne '-'} map {my $t = $_;
+							   map {@$_} @$t}
+				     @$file_types_array);
+	my $dash_was_explicit =
+	  scalar(grep {my $t=$_;scalar(grep {my $e=$_;
+					     scalar(grep {$_ eq '-'} @$e)}
+				       @$t)} @$file_types_array);
 
-	#If there's only one input file detected, use that input file as a stub
-	#for the output file name construction
-	if(scalar(grep {$_ ne '-'} map {@$_} @$input_files) == 1)
+	#If there's only one input file detected and the dash for STDIN was not
+	#explicitly provided, use that input file as a stubfor the output file
+	#name construction
+	if($num_input_files == 1 && !$dash_was_explicit)
 	  {
-	    $outfile_stub = (grep {$_ ne '-'} map {@$_} @$input_files)[0];
-	    #@$input_files = ();
+	    $outfile_stub = (grep {$_ ne '-'} map {my $t = $_;
+						   map {@$_} @$t}
+			     @$file_types_array)[0];
+
+	    #Unless the dash was explicitly supplied as a separate file, treat
+	    #the input file as a stub only (not as an actual input file
+	    @$file_types_array = ([]);
+	    $num_input_files = 0;
 
 	    #If the stub contains a directory path AND outdirs were supplied
 	    if($outfile_stub =~ m%/% &&
@@ -1534,24 +1550,23 @@ sub getFileSets
 	  }
 	#If standard input has been redirected in and there's more than 1 input
 	#file detected, warn the user about the name of the outfile using STDIN
-	elsif(scalar(grep {$_ ne '-'} map {@$_} @$input_files) > 1)
-	  {warning('Input on STDIN detected along with multiple other ',
-		   'input files of the same type.  This input will be ',
-		   'referred to as [',$outfile_stub,'].')}
+	elsif($num_input_files > 1 || $dash_was_explicit)
+	  {warning("Input on STDIN will be referred to as [$outfile_stub].")}
 
 	#Unless the dash was supplied explicitly by the user, push it on
-	unless(scalar(grep {my $t=$_;scalar(grep {my $e=$_;
-						  scalar(grep {$_ eq '-'} @$e)}
-					    @$t)} @$file_types_array))
+	unless($dash_was_explicit)
 	  {
 	    debug("Pushing on the dash file.") if($DEBUG > 99);
 
 	    #If there are other input files present, push it
-	    if(scalar(@$input_files))
-	      {push(@{$input_files->[-1]},'-')}
+	    if($num_input_files)
+	      {push(@$file_types_array,[['-']])}
 	    #Else create a new input file set with it as the only file member
 	    else
-	      {@$input_files = (['-'])}
+	      {
+		@$file_types_array = ();
+		push(@$file_types_array,[['-']]);
+	      }
 	  }
       }
 

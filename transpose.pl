@@ -7,7 +7,7 @@
 #Copyright 2008
 
 #These variables (in main) are used by getVersion() and usage()
-my $software_version_number = '1.1';
+my $software_version_number = '1.3';
 my $created_on_date         = '7/11/2011';
 
 ##
@@ -503,9 +503,10 @@ foreach my $input_file_set (@input_files)
 		   'Opened input file.')}
 
 	my $line_num     = 0;
-	my $verbose_freq = 100;
+	my $verbose_freq = 10;
 	my @data         = ();
-	my($rows,$cols);
+	my $rows         = 0;
+	my $cols         = 0;
 	my $in_header    = 1;
 
 	#For each line in the current input file
@@ -541,10 +542,38 @@ foreach my $input_file_set (@input_files)
 
 	    chomp;
 
-	    push(@data,[split(/\t/,$_)]);
+	    my(@tmpdata);
+	    push(@tmpdata,split(/\t/,$_));
 
-	    $cols = scalar(@{$data[-1]}) - 1
-	      if(!defined($cols) || (scalar(@{$data[-1]}) - 1) > $cols);
+	    #If the number of columns has grown, set a new max
+	    if(!defined($cols) || (scalar(@tmpdata) - 1) > $cols)
+	      {
+		#Prepend the new rows with tabs
+		if($cols > 0)
+		  {
+		    #Grab the first row
+		    my $dummies = $data[0];
+		    #Remove the contents, leaving tabs
+		    $dummies =~ s/[^\t]+//g;
+		    #Prepend the tabs to the added rows
+		    for(my $i = $cols + 1;$i < scalar(@tmpdata);$i++)
+		      {$data[$i] = $dummies}
+		  }
+
+		#Set a new max
+		$cols = scalar(@tmpdata) - 1;
+	      }
+
+	    #For each column of the original file, append a tab-delimed value
+	    for(my $i = 0;$i <= $cols;$i++)
+	      {
+		#Prepend a tab only if the string is non-empty
+		$data[$i] .= "\t" if(defined($data[$i]));
+
+		#Append the next value to this new row if there is a value
+		if($i < scalar(@tmpdata))
+		  {$data[$i] .= $tmpdata[$i]}
+	      }
 	  }
 
 	close(INPUT);
@@ -553,11 +582,12 @@ foreach my $input_file_set (@input_files)
 		'Input file done.  Time taken: [',scalar(markTime()),
 		' Seconds].');
 
-	$rows = scalar(@data) - 1;
-	foreach my $col (0..$cols)
-	  {print(join("\t",
-		      map {$#{$data[$_]} >= $col ? $data[$_]->[$col] : ''}
-			   (0..$rows)),"\n")}
+	if($cols == 0)
+	  {warning("Only 1 column was found.  Please make sure your input ",
+		   "file [$input_file] is using a tab as the column ",
+		   "delimiter.")}
+
+	print(join("\n",@data),"\n");
 
 	#If an output file name suffix is set
 	if(defined($outfile_suffix))

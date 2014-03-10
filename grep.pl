@@ -7,6 +7,14 @@
 #Los Alamos National Laboratory
 #Copyright 2004
 
+#To-do:
+#1. Accumulate matched lines in output files that have an extension that uses
+#   the matched string.  That way if I did grep.pl -p 'chr\d+'
+#   --split-accumulate, I'd end up with files named 'whatever.chr1,
+#   whatever.chr2, ...'.
+#2. Tried matching a fastq file using -c '^\@[^\n]*\n[^\n]*\n\+' and it did not
+#   split the records. This is a bug.  Fix it.
+
 markTime();
 my $software_version_number = '1.12';
 
@@ -945,7 +953,7 @@ sub warning
 ## many different platforms use instead of hard returns.  Note, it uses a
 ## global array reference variable ($infile_line_buffer).
 ##
-sub getLineOLD
+sub getLineOLDOLD
   {
     my $file_handle = $_[0];
 
@@ -984,7 +992,7 @@ sub getLineOLD
 ## global array reference variable ($infile_line_buffer) to keep track of
 ## buffered lines from multiple file handles.
 ##
-sub getLine
+sub getLineOLD
   {
     my $file_handle = $_[0];
 
@@ -1061,6 +1069,90 @@ sub getLine
     return($_ = shift(@{$main::infile_line_buffer->{$file_handle}->{FILE}}));
   }
 
+##
+## Subroutine that gets a line of input and accounts for carriage returns that
+## many different platforms use instead of hard returns.  Note, it uses a
+## global array reference variable ($infile_line_buffer) to keep track of
+## buffered lines from multiple file handles.
+##
+sub getLine
+  {
+    my $file_handle = $_[0];
+
+    #Set a global array variable if not already set
+    $main::infile_line_buffer = {} if(!defined($main::infile_line_buffer));
+    if(!exists($main::infile_line_buffer->{$file_handle}))
+      {$main::infile_line_buffer->{$file_handle}->{FILE} = []}
+
+    #If this sub was called in array context
+    if(wantarray)
+      {
+	#Check to see if this file handle has anything remaining in its buffer
+	#and if so return it with the rest
+	if(scalar(@{$main::infile_line_buffer->{$file_handle}->{FILE}}) > 0)
+	  {
+	    return(@{$main::infile_line_buffer->{$file_handle}->{FILE}},
+		   map
+		   {
+		     #If carriage returns were substituted and we haven't
+		     #already issued a carriage return warning for this file
+		     #handle
+		     if(s/\r\n|\n\r|\r/\n/g &&
+			!exists($main::infile_line_buffer->{$file_handle}
+				->{WARNED}))
+		       {
+			 $main::infile_line_buffer->{$file_handle}->{WARNED}
+			   = 1;
+			 warning('Carriage returns were found in your file ',
+				 'and replaced with hard returns.');
+		       }
+		     split(/(?<=\n)/,$_);
+		   } <$file_handle>);
+	  }
+	
+	#Otherwise return everything else
+	return(map
+	       {
+		 #If carriage returns were substituted and we haven't already
+		 #issued a carriage return warning for this file handle
+		 if(s/\r\n|\n\r|\r/\n/g &&
+		    !exists($main::infile_line_buffer->{$file_handle}
+			    ->{WARNED}))
+		   {
+		     $main::infile_line_buffer->{$file_handle}->{WARNED}
+		       = 1;
+		     warning('Carriage returns were found in your file ',
+			     'and replaced with hard returns.');
+		   }
+		 split(/(?<=\n)/,$_);
+	       } <$file_handle>);
+      }
+
+    #If the file handle's buffer is empty, put more on
+    if(scalar(@{$main::infile_line_buffer->{$file_handle}->{FILE}}) == 0)
+      {
+	my $line = <$file_handle>;
+	#The following is to deal with files that have the eof character at the
+	#end of the last line.  I may not have it completely right yet.
+	if(defined($line))
+	  {
+	    if($line =~ s/\r\n|\n\r|\r/\n/g &&
+	       !exists($main::infile_line_buffer->{$file_handle}->{WARNED}))
+	      {
+		$main::infile_line_buffer->{$file_handle}->{WARNED} = 1;
+		warning('Carriage returns were found in your file and ',
+			'replaced with hard returns.');
+	      }
+	    @{$main::infile_line_buffer->{$file_handle}->{FILE}} =
+	      split(/(?<=\n)/,$line);
+	  }
+	else
+	  {@{$main::infile_line_buffer->{$file_handle}->{FILE}} = ($line)}
+      }
+
+    #Shift off and return the first thing in the buffer for this file handle
+    return($_ = shift(@{$main::infile_line_buffer->{$file_handle}->{FILE}}));
+  }
 
 
 sub debug

@@ -16,7 +16,7 @@
 #   split the records. This is a bug.  Fix it.
 
 markTime();
-my $software_version_number = '1.12';
+my $software_version_number = '1.13';
 
 ##
 ## Start Main

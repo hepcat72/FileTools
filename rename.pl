@@ -7,7 +7,7 @@
 #Copyright 2004
 
 markTime();
-my $software_version_number = '1.8';
+my $software_version_number = '1.9';
 
 ##
 ## Start Main
@@ -153,7 +153,7 @@ foreach my $input_file (@input_files)
 	  }
 	else
 	  {
-	    debug("$newname =~ s/(?=[^\\/]*\Z)$replace/$with/");
+	    debug("$newname =~ s/(?=[^\\/]*\\Z)$replace/$with/");
 	    $newname =~ s/(?=[^\/]*\Z)$replace/$with/;
 	    debug("Replaced: $newname");
 	  }

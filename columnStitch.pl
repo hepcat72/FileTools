@@ -8,7 +8,7 @@
 #Copyright 2012
 
 #These variables (in main) are used by getVersion() and usage()
-my $software_version_number = '1.2';
+my $software_version_number = '1.3';
 my $created_on_date         = '4/24/2012';
 
 ##
@@ -183,7 +183,7 @@ if($verbose && !defined($outfile_suffix) && isStandardOutputToTerminal())
 	   'redirect output to a file, or supply an outfile suffix (-o).')}
 
 #Make sure there is input
-if(scalar(@$input_files) == 0)
+if(scalar(@$input_files) == 0 && isStandardInputFromTerminal())
   {
     error('No input files detected.');
     usage(1);
@@ -239,9 +239,12 @@ if(scalar(@$columns))
   {
     if(scalar(@$columns) < scalar(@$input_files))
       {
-	error("Columns from each file were not specified.  If you want all ",
-	      "columns from a specific set of input files, you must supply ",
-	      "an empty string, e.g. -c ''.");
+	error("There were [",scalar(@$columns),"] column flags supplied and [",
+	      scalar(@$input_files),"] file flags (including STDIN) ",
+	      "supplied.  There must be at least as many column flags as ",
+	      "file flags supplied.  If you want all columns from a specific ",
+	      "set of input files, you must supply an empty string, e.g. -c ",
+	      "''.");
 	quit(1);
       }
 

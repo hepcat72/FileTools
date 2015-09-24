@@ -5,7 +5,7 @@ I have been using and refining these personal file tools for years.  Most of the
 
 Here's a few quick notes about some of the tools:
 
-**grep.pl** - This tool is of particular note.  This is my personal implementation of grep.  It's slow, but it's designed for multi-line records and had pre-built record recognition for fasta files and sections of blast results.
+**grep.pl** - This tool is of particular note.  This is my personal implementation of grep.  It's slow, but it's designed for multi-line records and has pre-built record recognition options for fasta files and sections of blast results.
 
 **carriage2newline.pl** - Fixes files that have weird combinations of carriage returns and newlines.
 

@@ -9,7 +9,7 @@
 #Copyright 2005
 
 my $template_version_number = '1.20';
-my $software_version_number = '1.6';
+my $software_version_number = '1.7';
 
 ##
 ## Start Main
@@ -281,9 +281,9 @@ USAGE2: $script -s search_string -r replace_string [-p] [--recurse] [-e "extensi
                                    regular expression.  Also, allows the
                                    replacement to contain numeric references to
                                    matches captured in \$1, \$2, etc..
-                                   E.g. `-r 'find (\\d+) matches' -w '$1'` will
-                                   replace "Find 10 matches" with "10" when
-                                   using the -p option.
+                                   E.g. `-r 'find (\\d+) matches' -w '\$1'`
+                                   will replace "Find 10 matches" with "10"
+                                   when using the -p option.
      --recurse            OPTIONAL [Off] Search and replace recursively into
                                    all subdirectories.
      -e|--extensions      OPTIONAL [all] The extensions of the files to search.

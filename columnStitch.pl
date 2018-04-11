@@ -8,7 +8,7 @@
 #Copyright 2012
 
 #These variables (in main) are used by getVersion() and usage()
-my $software_version_number = '1.3';
+my $software_version_number = '1.4';
 my $created_on_date         = '4/24/2012';
 
 ##
@@ -2565,6 +2565,11 @@ sub usage
      --overwrite          OPTIONAL Overwrite existing output files.
      --ignore             OPTIONAL Ignore critical errors.  Also see
                                    --overwrite or --skip-existing.
+     --keep-infile-       OPTIONAL Print all headers from all input files
+       headers                     first.  Note, if there are commented column
+                                   headers, they may be printed once in the
+                                   original order and once in the new column
+                                   order.  This is a known issue.
      --noheader           OPTIONAL Do not print commented script version, date,
                                    and command line call to each outfile.
      --debug              OPTIONAL Debug mode/level.  (e.g. --debug --debug)

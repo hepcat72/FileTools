@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl
+#!/usr/bin/perl
 
 my $warnme          = 1; #Tell me when unclosed tags are encountered
 my $numwarn         = 0;

@@ -16,7 +16,7 @@
 #   split the records. This is a bug.  Fix it.
 
 markTime();
-my $software_version_number = '1.13';
+my $software_version_number = '1.14';
 
 ##
 ## Start Main
@@ -373,10 +373,15 @@ foreach my $input_file (@input_files)
       {warning("Your pattern: [$pattern] is empty.  Every line will match.")}
 
     if($verbose)
-      {print STDERR ("PATTERN: ",
-		     ($everything_else ? 'EVERYTHING EXCEPT (-v activated): ' :
-		      ''),
-		     "[$pattern]\n")}
+      {
+	if(defined($count_pattern))
+	  {print STDERR ("RECORD PATTERN (-c): [$count_pattern]\n")}
+
+	print STDERR ("PATTERN: ",
+		      ($everything_else ?
+		       'EVERYTHING EXCEPT (-v activated): ' : ''),
+		      "[$pattern]\n");
+      }
 
     #Open the input file
     unless(open(INPUT,$input_file))

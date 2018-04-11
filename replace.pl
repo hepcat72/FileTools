@@ -9,7 +9,7 @@
 #Copyright 2005
 
 my $template_version_number = '1.20';
-my $software_version_number = '1.7';
+my $software_version_number = '1.8';
 
 ##
 ## Start Main
@@ -22,6 +22,7 @@ use Getopt::Long;
 my(@input_files,
    $replace,
    $with,
+   $also_match,
    $current_output_file);
 my $extensions = [];
 #Initialize flags
@@ -51,6 +52,7 @@ GetOptions('r|replace=s'        => \$replace,                #REQUIRED
 	   'e|extensions=s'     => sub {push(@$extensions,   #OPTIONAL [undef]
 					     $_[1])},
 	   'p|perl-regex-mode!' => \$regex_mode_flag,        #OPTIONAL [Off]
+	   'a|also-match=s'     => \$also_match,             #OPTIONAL [undef]
 	   'recurse!'           => \$recurse_flag,           #OPTIONAL [Off]
 	   'f|force!'           => \$force,                  #OPTIONAL [Off]
 	   'd|debug!'           => \$DEBUG,                  #OPTIONAL [Off]
@@ -137,7 +139,11 @@ my $captures = [];
 
 #Fix the search string to escape metacharacters (if we're not in regex mode)
 if(!$regex_mode_flag)
-  {$replace = quotemeta($replace)}
+  {
+    $replace = quotemeta($replace);
+    if(defined($also_match))
+      {$also_match = quotemeta($also_match)}
+  }
 #Else see what substitutions might the user be asking for
 elsif($replace =~ /\(/ && $with =~ /\$\d/)
   {while($with =~ /(?<!\\)(\$\d+)/g)
@@ -175,7 +181,8 @@ foreach my $input_file (@input_files)
 	      $recurse_flag,
 	      $force,
 	      $extensions,
-	      $captures);
+	      $captures,
+	      $also_match);
   }
 
 
@@ -277,8 +284,10 @@ USAGE2: $script -s search_string -r replace_string [-p] [--recurse] [-e "extensi
                                    *The flag may be omitted if this is the
                                    second argument and no flag was used for the
                                    search string.
-     -p|--perl-regex-mode OPTIONAL [Off] Treat the search string as a perl
-                                   regular expression.  Also, allows the
+     -a|--also-match      OPTIONAL [undef] Only do replacements on lines that
+                                   also match this string.
+     -p|--perl-regex-mode OPTIONAL [Off] Treat the search string (-r and -a) as
+                                   a perl regular expression.  Also, allows the
                                    replacement to contain numeric references to
                                    matches captured in \$1, \$2, etc..
                                    E.g. `-r 'find (\\d+) matches' -w '\$1'`
@@ -699,7 +708,8 @@ sub searchrep
     my $force          = $_[4];
     my $extensions     = $_[5];
     my $captures       = $_[6];
-    my $not_first_call = $_[7];  #DO NOT SUPPLY.  INTERNAL USE ONLY.
+    my $also_match     = $_[7];
+    my $not_first_call = $_[8];  #DO NOT SUPPLY.  INTERNAL USE ONLY.
 
     debug("searchrep called with input file: [$input_file]");
 
@@ -727,6 +737,7 @@ sub searchrep
 		     $force,
 		     $extensions,
 		     $captures,
+		     $also_match,
 		     1)}
       }
     elsif(scalar(@$extensions) == 0 ||
@@ -799,7 +810,7 @@ sub searchrep
 		       ($input_file eq '-' ? 'STDIN' : $input_file),
 		       "] Reading line $line_num.")}
 
-	    if(scalar(@$captures))
+	    if((!defined($also_match) || /$also_match/) && scalar(@$captures))
 	      {
 		my @replacements = ();
 		my $last_pos     = 0;
@@ -840,7 +851,8 @@ sub searchrep
 		    s/$replacement->[0]/$replacement->[1]/;
 		  }
 	      }
-	    elsif($num_replacements = s/$replace/$with/g)
+	    elsif((!defined($also_match) || /$also_match/) &&
+		  ($num_replacements = s/$replace/$with/g))
 	      {
 		$changed += $num_replacements;
 		debug("Replacing [$&] with [$with]");

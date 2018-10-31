@@ -7,7 +7,7 @@
 #Copyright 2004
 
 markTime();
-my $software_version_number = '1.9';
+my $software_version_number = '1.10';
 
 ##
 ## Start Main
@@ -181,18 +181,26 @@ foreach my $input_file (@input_files)
 	warning("Replacing $newname") if(!$quiet && -e $newname);
 	if($verbose)
 	  {print("Renaming [$input_file] to [$newname].\n")}
-	rename($input_file,$newname) unless($dry_run);
-	if(!$? && !exists($exist_check->{$newname}))
-	  {
-	    $exist_check->{$newname} = 1;
-	    $renamed++;
-	  }
+	if(!-w $input_file || !-W $input_file)
+	  {error("Unable to rename [$input_file].  No write permission.  ")}
 	else
 	  {
-	    error("Unable to rename [$input_file].  ",
-		  ($dry_run && exists($exist_check->{$newname}) ?
-		   "This rename operation will conflict with a " .
-		   "previously renamed file." : $!),"\n");
+	    my $status = rename($input_file,$newname) unless($dry_run);
+	    if(!$? && $status && !exists($exist_check->{$newname}) &&
+	       -e $newname && !-e $input_file)
+	      {
+		$exist_check->{$newname} = 1;
+		$renamed++;
+	      }
+	    elsif($? || !$status || exists($exist_check->{$newname}))
+	      {
+		error("Unable to rename [$input_file].  ",
+		      ($dry_run && exists($exist_check->{$newname}) ?
+		       "This rename operation will conflict with a " .
+		       "previously renamed file." : $!),"\n");
+	      }
+	    else
+	      {error("Unable to rename [$input_file].  Reason unknown.")}
 	  }
 	$number++; #Advance the number in any case so they can force it later
       }
